@@ -1,0 +1,22 @@
+{
+  "name": "@lozzalingo/calendar",
+  "version": "1.0.0",
+  "description": "Calendar & availability system for Lozzalingo sites",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./routes": "./src/routes.js",
+    "./controller": "./src/controller.js",
+    "./services/availability": "./src/services/availability.js",
+    "./services/recurring": "./src/services/recurring.js",
+    "./services/ical": "./src/services/ical.js",
+    "./services/slots": "./src/services/slots.js",
+    "./services/sync": "./src/services/sync.js",
+    "./services/cross-brand": "./src/services/cross-brand.js",
+    "./services/time-slots": "./src/services/time-slots.js",
+    "./ui/SharedCalendar": "./ui/SharedCalendar.tsx"
+  },
+  "keywords": ["calendar", "availability", "booking", "scheduling"],
+  "license": "UNLICENSED",
+  "private": true
+}

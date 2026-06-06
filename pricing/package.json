@@ -1,0 +1,13 @@
+{
+  "name": "@lozzalingo/pricing",
+  "version": "1.0.0",
+  "description": "Unified pricing calculator for per-person, flat-rate, and min-reserve pricing models",
+  "private": true,
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./calculator": "./src/calculator.js",
+    "./format": "./src/format.js",
+    "./validation": "./src/validation.js"
+  }
+}

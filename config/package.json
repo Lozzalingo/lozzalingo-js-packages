@@ -1,0 +1,11 @@
+{
+  "name": "@lozzalingo/config",
+  "version": "1.0.0",
+  "description": "Centralized config system with 3-tier resolution and feature flags",
+  "private": true,
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./server": "./server/index.js"
+  }
+}

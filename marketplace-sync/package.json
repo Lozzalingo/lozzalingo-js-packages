@@ -1,0 +1,14 @@
+{
+  "name": "@lozzalingo/marketplace-sync",
+  "version": "1.0.0",
+  "description": "Sync experiences to external marketplace platforms",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./routes": "./src/routes.js",
+    "./adapters/*": "./src/adapters/*.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

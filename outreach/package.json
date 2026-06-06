@@ -1,0 +1,18 @@
+{
+  "name": "@lozzalingo/outreach",
+  "version": "1.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./routes": "./src/routes.js",
+    "./controller": "./src/controller.js",
+    "./services/triggers": "./src/services/triggers.js",
+    "./services/scheduler": "./src/services/scheduler.js",
+    "./services/templates": "./src/services/templates.js",
+    "./services/log": "./src/services/log.js"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.10.0",
+    "express": "^5.1.0"
+  }
+}

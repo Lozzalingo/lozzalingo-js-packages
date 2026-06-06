@@ -1,0 +1,11 @@
+{
+  "destinations": [
+    {
+      "id": "9f3ff0c0-4db9-4a52-8dd5-1b06267e3dc4",
+      "name": "Instagram",
+      "rtmpUrl": "rtmps://edgetee-upload-man2-1.xx.fbcdn.net:443/rtmp/",
+      "streamKey": "18080230193525755?s_bl=1&s_fbp=lhr6-1&s_ow=10&s_prp=man2-1&s_sw=0&s_tids=1&s_vt=ig&a=Ab6cMz7QPknMSe3jxyMW0wIc",
+      "enabled": true
+    }
+  ]
+}

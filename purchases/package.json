@@ -1,0 +1,17 @@
+{
+  "name": "@lozzalingo/purchases",
+  "version": "1.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./routes": "./src/routes.js",
+    "./controller": "./src/controller.js",
+    "./services/download-token": "./src/services/download-token.js",
+    "./services/access-control": "./src/services/access-control.js"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@prisma/client": "^5.10.0",
+    "express": "^5.1.0"
+  }
+}

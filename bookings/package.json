@@ -1,0 +1,17 @@
+{
+  "name": "@lozzalingo/bookings",
+  "version": "1.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./routes": "./src/routes.js",
+    "./controller": "./src/controller.js",
+    "./services/booking-number": "./src/services/booking-number.js",
+    "./services/customer": "./src/services/customer.js",
+    "./services/statuses": "./src/services/statuses.js"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.10.0",
+    "express": "^5.1.0"
+  }
+}

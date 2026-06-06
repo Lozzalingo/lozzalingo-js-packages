@@ -1,0 +1,25 @@
+{
+  "name": "@lozzalingo/core",
+  "version": "1.0.0",
+  "description": "Orchestrator for Lozzalingo JS - auto-registers packages from a config file",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./lozzalingo": "./src/lozzalingo.js",
+    "./config-loader": "./src/config-loader.js",
+    "./defaults": "./src/defaults.js"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "stripe": "^20.1.0"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.10.0",
+    "express": "^5.1.0",
+    "cors": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "cors": { "optional": true },
+    "express-fileupload": { "optional": true }
+  }
+}

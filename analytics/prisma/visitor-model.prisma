@@ -1,0 +1,85 @@
+// Visitor Analytics Model (Reference)
+// Copy this model into your project's schema.prisma
+// Note: @db.Text annotations are stripped for SQLite compatibility
+// For MySQL, you may want to add @db.Text to userAgent and eventData fields
+
+model Visitor {
+  id               String    @id @default(uuid())
+  ip               String
+  path             String?
+  referrer         String?
+  referrerCategory String?
+  city             String?
+  country          String?
+  region           String?
+  latitude         Float?
+  longitude        Float?
+  timestamp        DateTime  @default(now())
+
+  // Session tracking
+  sessionId        String?
+  sessionPageCount Int?
+  isNewVisitor     Boolean   @default(true)
+
+  // Device & Browser info
+  userAgent        String?
+  deviceType       String?
+  deviceBrand      String?
+  deviceConfidence Float?
+  browser          String?
+  browserVersion   String?
+  os               String?
+  osVersion        String?
+
+  // Screen & Hardware
+  screenWidth      Int?
+  screenHeight     Int?
+  viewportWidth    Int?
+  viewportHeight   Int?
+  pixelRatio       Float?
+  colorDepth       Int?
+  touchPoints      Int?
+  orientation      String?
+  hardwareCores    Int?
+  deviceMemory     Float?
+  connectionType   String?
+
+  // Fingerprinting
+  fingerprint      String?
+  canvasHash       String?
+  webglHash        String?
+
+  // Bot detection
+  isBot            Boolean   @default(false)
+  botType          String?
+  jsEnabled        Boolean   @default(true)
+
+  // Page timing
+  pageLoadTime     Int?
+  timeOnPage       Int?
+
+  // UTM & Campaign tracking
+  utmSource        String?
+  utmMedium        String?
+  utmCampaign      String?
+  utmContent       String?
+  utmTerm          String?
+
+  // Event tracking
+  eventType        String?
+  eventData        String?
+
+  // E-commerce tracking
+  productViewed    String?
+  addedToCart      Boolean   @default(false)
+  checkoutStarted  Boolean   @default(false)
+  purchaseComplete Boolean   @default(false)
+  orderValue       Float?
+
+  @@index([timestamp])
+  @@index([sessionId])
+  @@index([fingerprint])
+  @@index([country])
+  @@index([eventType])
+  @@index([isBot])
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@lozzalingo/experiences",
+  "version": "2.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./routes": "./src/routes.js",
+    "./controller": "./src/controller.js",
+    "./services/slug": "./src/services/slug.js"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.10.0",
+    "express": "^5.1.0"
+  }
+}

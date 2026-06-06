@@ -1,0 +1,19 @@
+{
+  "name": "@lozzalingo/payments",
+  "version": "2.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./routes": "./src/routes.js",
+    "./controller": "./src/controller.js",
+    "./services/checkout": "./src/services/checkout.js",
+    "./services/invoicing": "./src/services/invoicing.js",
+    "./services/webhooks": "./src/services/webhooks.js"
+  },
+  "dependencies": {
+    "stripe": "^20.1.0"
+  },
+  "peerDependencies": {
+    "express": "^5.1.0"
+  }
+}

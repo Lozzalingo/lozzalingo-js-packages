@@ -1,0 +1,17 @@
+{
+  "name": "@lozzalingo/external-api",
+  "version": "1.0.0",
+  "description": "API key management and external article endpoints for Lozzalingo sites",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./routes": "./src/routes.js",
+    "./controller": "./src/controller.js",
+    "./services/api-keys": "./src/services/api-keys.js",
+    "./middleware": "./src/middleware.js"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.10.0",
+    "express": "^5.1.0"
+  }
+}

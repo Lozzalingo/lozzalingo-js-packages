@@ -1,0 +1,18 @@
+{
+  "name": "@lozzalingo/ops",
+  "version": "1.0.0",
+  "description": "Health monitoring, disk/memory checks, and operations dashboard",
+  "private": true,
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./server": "./server/index.js"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.0.0",
+    "express": "^4.0.0 || ^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@prisma/client": { "optional": true }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@lozzalingo/game-engine",
+  "version": "1.0.0",
+  "description": "Shared game engine for FBQ quizzes and BucketRace scavenger hunts",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./server": "./src/realtime/socket-server.js",
+    "./client": "./src/realtime/socket-client.js",
+    "./types": "./src/types/index.js"
+  },
+  "dependencies": {
+    "nanoid": "^3.3.7"
+  }
+}
