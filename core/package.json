@@ -16,10 +16,14 @@
   "peerDependencies": {
     "@prisma/client": "^5.10.0",
     "express": "^5.1.0",
-    "cors": "^2.0.0"
+    "cors": "^2.0.0",
+    "jose": "^5.0.0",
+    "@panva/hkdf": "^1.1.1"
   },
   "peerDependenciesMeta": {
     "cors": { "optional": true },
-    "express-fileupload": { "optional": true }
+    "express-fileupload": { "optional": true },
+    "jose": { "optional": true },
+    "@panva/hkdf": { "optional": true }
   }
 }

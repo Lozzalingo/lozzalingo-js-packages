@@ -134,24 +134,75 @@ class Lozzalingo {
   // ── Admin Auth ─────────────────────────────────────────────────────────────
 
   _setupAdminAuth() {
-    const adminKey =
-      this.config.auth?.adminKey ||
-      process.env.ADMIN_API_KEY ||
-      process.env.NEXTAUTH_SECRET;
+    const nextAuthSecret = process.env.NEXTAUTH_SECRET;
 
-    this._adminMiddleware = (req, res, next) => {
-      const key = req.headers["x-admin-key"] || req.headers["x-admin-secret"] || req.query.adminKey;
-      // Allow localhost passthrough for local development
-      const isLocalDev = key === "localhost" && (req.hostname === "localhost" || req.hostname === "127.0.0.1");
-      if (isLocalDev) return next();
-      if (!adminKey || key !== adminKey) {
-        console.log("[Auth] Admin key rejected for:", req.method, req.originalUrl);
-        return res.status(403).json({ error: "Admin access required" });
+    // Static keys for backward compatibility (API integrations, scripts)
+    const adminKeys = [
+      this.config.auth?.adminKey,
+      process.env.ADMIN_API_KEY,
+      process.env.ADMIN_SECRET,
+    ].filter(Boolean);
+
+    // Lazy-load JWT decode utilities
+    let _decodeJWT;
+    async function decodeNextAuthJWT(token) {
+      if (!nextAuthSecret) return null;
+      if (!_decodeJWT) {
+        try {
+          const { jwtDecrypt } = require("jose");
+          const hkdf = require("@panva/hkdf");
+          _decodeJWT = async (rawToken) => {
+            const encKey = await hkdf.default("sha256", nextAuthSecret, "", "NextAuth.js Generated Encryption Key", 32);
+            const { payload } = await jwtDecrypt(rawToken, encKey, { clockTolerance: 15 });
+            return payload;
+          };
+        } catch (err) {
+          console.warn("[Auth] JWT decode unavailable (jose/@panva/hkdf missing):", err.message);
+          _decodeJWT = async () => null;
+        }
       }
-      next();
+      return _decodeJWT(token);
+    }
+
+    this._adminMiddleware = async (req, res, next) => {
+      // Extract token from Authorization header or legacy x-admin headers
+      const bearerToken = req.headers.authorization?.startsWith("Bearer ")
+        ? req.headers.authorization.split(" ")[1]
+        : null;
+      const headerKey = req.headers["x-admin-key"] || req.headers["x-admin-secret"] || req.query.adminKey;
+      const token = bearerToken || headerKey;
+
+      // 1. Allow localhost passthrough for local development
+      const isLocalDev = token === "localhost" && (req.hostname === "localhost" || req.hostname === "127.0.0.1");
+      if (isLocalDev) return next();
+
+      // 2. Try decoding as NextAuth JWT (primary auth method for admin dashboard)
+      if (token && nextAuthSecret) {
+        try {
+          const payload = await decodeNextAuthJWT(token);
+          if (payload && (payload.role === "admin" || payload.role === "superadmin")) {
+            req.adminUser = payload;
+            return next();
+          }
+          if (payload) {
+            console.log("[Auth] Valid JWT but insufficient role:", payload.role, "for", req.method, req.originalUrl);
+            return res.status(403).json({ error: "Admin role required" });
+          }
+        } catch (e) {
+          // Not a valid JWT, fall through to static key check
+        }
+      }
+
+      // 3. Fallback: static key comparison (for API integrations, scripts)
+      if (token && adminKeys.includes(token)) {
+        return next();
+      }
+
+      console.log("[Auth] Admin auth rejected for:", req.method, req.originalUrl);
+      return res.status(403).json({ error: "Admin access required" });
     };
 
-    console.log("[Core] Admin auth middleware configured");
+    console.log("[Core] Admin auth middleware configured (JWT + static key fallback)");
   }
 
   /**

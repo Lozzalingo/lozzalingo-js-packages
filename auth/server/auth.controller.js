@@ -128,10 +128,15 @@ function createAuthController(prisma, emailService, options = {}) {
         return res.status(400).json({ error: 'Invalid or expired verification token' });
       }
 
-      // Mark token as used
+      // Mark token as used and verify the user
       await prisma.emailVerificationToken.update({
         where: { id: verificationToken.id },
         data: { used: true },
+      });
+
+      await prisma.user.update({
+        where: { id: verificationToken.userId },
+        data: { emailVerified: true },
       });
 
       console.log('[Auth] Email verified for userId:', verificationToken.userId);
