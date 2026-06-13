@@ -136,7 +136,7 @@ class Lozzalingo {
   _setupAdminAuth() {
     const nextAuthSecret = process.env.NEXTAUTH_SECRET;
 
-    // Static keys for backward compatibility (API integrations, scripts)
+    // Fallback static keys for backward compatibility (API integrations, etc.)
     const adminKeys = [
       this.config.auth?.adminKey,
       process.env.ADMIN_API_KEY,
@@ -176,7 +176,7 @@ class Lozzalingo {
       const isLocalDev = token === "localhost" && (req.hostname === "localhost" || req.hostname === "127.0.0.1");
       if (isLocalDev) return next();
 
-      // 2. Try decoding as NextAuth JWT (primary auth method for admin dashboard)
+      // 2. Try decoding as NextAuth JWT (primary auth method)
       if (token && nextAuthSecret) {
         try {
           const payload = await decodeNextAuthJWT(token);
@@ -193,7 +193,7 @@ class Lozzalingo {
         }
       }
 
-      // 3. Fallback: static key comparison (for API integrations, scripts)
+      // 3. Fallback: static key comparison (for API integrations)
       if (token && adminKeys.includes(token)) {
         return next();
       }
@@ -310,9 +310,6 @@ class Lozzalingo {
 
     // External API
     this._registerExternalApi();
-
-    // Dashboard
-    this._registerDashboard();
 
     // Optional features
     this._registerAnalytics();
@@ -497,20 +494,6 @@ class Lozzalingo {
     });
   }
 
-  _registerDashboard() {
-    if (!this.isEnabled("dashboard")) return;
-    this._tryRegister("dashboard", () => {
-      const { createDashboardRoutes } = require("@lozzalingo/dashboard/server");
-      this.app.use(
-        this.config.routes.dashboard,
-        createDashboardRoutes(this, {
-          authMiddleware: this._adminMiddleware,
-          adminPaths: this.config.dashboard?.adminPaths || {},
-        })
-      );
-    });
-  }
-
   _registerAnalytics() {
     if (!this.isEnabled("analytics")) return;
     this._tryRegister("analytics", () => {
@@ -562,11 +545,11 @@ class Lozzalingo {
       const prisma = this.prisma;
 
       // Dynamically import calendar slot functions if calendar is enabled
-      let blockSlot, releaseSlot, createAndBlockSlot, checkTimeWindowAvailable;
+      let bookSlot, releaseSlot, createAndBlockSlot, checkTimeWindowAvailable;
       if (this.isEnabled("calendar")) {
         try {
           const slots = require("@lozzalingo/calendar/services/slots");
-          blockSlot = slots.blockSlot;
+          bookSlot = slots.bookSlot;
           releaseSlot = slots.releaseSlot;
         } catch (e) {
           console.warn("[Core] Calendar slots not available:", e.message);
@@ -584,15 +567,40 @@ class Lozzalingo {
        * Parse a booking's eventDate + eventTime + duration into start/end Date objects.
        * Handles both "HH:MM" and "HH:MM - HH:MM" formats for eventTime.
        */
+      /**
+       * Parse a booking's eventDate + eventTime + duration into start/end Date objects.
+       * Handles both "HH:MM" and "HH:MM - HH:MM" formats for eventTime.
+       * Times are always interpreted as Europe/London to avoid UTC/BST drift
+       * between local dev (BST) and Docker (UTC).
+       */
       function parseBookingTimeWindow(booking) {
         if (!booking.eventDate || !booking.eventTime) return null;
         const dateStr = new Date(booking.eventDate).toISOString().split("T")[0];
 
+        // Convert a London wall-clock time to a UTC Date.
+        // e.g. "14:00" on 2026-06-10 in London (BST, UTC+1) -> 13:00 UTC
+        function londonToUTC(date, hours, minutes) {
+          // Start with a UTC guess
+          const utcGuess = new Date(`${date}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00Z`);
+          // Check what London wall-clock time this UTC corresponds to
+          const formatter = new Intl.DateTimeFormat("en-GB", {
+            timeZone: "Europe/London",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          });
+          const londonTime = formatter.format(utcGuess);
+          const [londonH, londonM] = londonTime.split(":").map(Number);
+          // Adjust by the difference to get the correct UTC
+          const offsetMs = ((londonH - hours) * 60 + (londonM - minutes)) * 60 * 1000;
+          return new Date(utcGuess.getTime() - offsetMs);
+        }
+
         // Try range format first: "10:00 - 13:00"
         const rangeMatch = booking.eventTime.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
         if (rangeMatch) {
-          const startTime = new Date(`${dateStr}T${rangeMatch[1].padStart(2, "0")}:${rangeMatch[2]}:00`);
-          const endTime = new Date(`${dateStr}T${rangeMatch[3].padStart(2, "0")}:${rangeMatch[4]}:00`);
+          const startTime = londonToUTC(dateStr, parseInt(rangeMatch[1]), parseInt(rangeMatch[2]));
+          const endTime = londonToUTC(dateStr, parseInt(rangeMatch[3]), parseInt(rangeMatch[4]));
           return { startTime, endTime };
         }
 
@@ -600,7 +608,7 @@ class Lozzalingo {
         const simpleMatch = booking.eventTime.match(/^(\d{1,2}):(\d{2})$/);
         if (simpleMatch && booking.duration) {
           const durationMinutes = Math.round(parseFloat(booking.duration) * 60);
-          const startTime = new Date(`${dateStr}T${simpleMatch[1].padStart(2, "0")}:${simpleMatch[2]}:00`);
+          const startTime = londonToUTC(dateStr, parseInt(simpleMatch[1]), parseInt(simpleMatch[2]));
           const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
           return { startTime, endTime };
         }
@@ -672,8 +680,10 @@ class Lozzalingo {
           const window = parseBookingTimeWindow(bookingData);
           if (!window) return { available: true };
           console.log(`[Bookings] Checking availability: ${window.startTime.toISOString()} - ${window.endTime.toISOString()}`);
+          // Buffer is already baked into stored slot times, so no additional
+          // travel buffer needed for the availability check
           const result = await checkTimeWindowAvailable(prisma, window.startTime, window.endTime, {
-            travelBufferMinutes: 30,
+            travelBufferMinutes: 0,
           });
           if (!result.available) {
             console.log(`[Bookings] Time slot NOT available - ${result.conflicts.length} conflict(s)`);
@@ -684,33 +694,52 @@ class Lozzalingo {
         onCreated: async (booking) => {
           console.log("[Bookings] Booking created:", booking.bookingNumber);
 
-          // Create and block a calendar slot if we have enough info
-          if (createAndBlockSlot && booking.eventDate && booking.eventTime) {
+          // Calendar slot creation rules:
+          // - ENQUIRY bookings: NO slot (they haven't committed to a time)
+          // - Bookings going to checkout (INVOICE_SENT): PENCILLED for 5 mins
+          // - Already confirmed/paid (admin-created): BOOKED immediately
+          const isPaid = ["PAID", "CONFIRMED", "DEPOSIT_PAID", "COMPLETED"].includes(booking.status);
+          const isEnquiry = booking.status === "ENQUIRY";
+          const shouldCreateSlot = !isEnquiry && createAndBlockSlot && booking.eventDate && booking.eventTime;
+
+          if (shouldCreateSlot) {
             try {
               const window = parseBookingTimeWindow(booking);
               if (window) {
-                console.log(`[Bookings] Creating calendar slot for ${booking.bookingNumber}: ${window.startTime.toISOString()} - ${window.endTime.toISOString()}`);
-                // bufferHours is a legacy field that stores minutes.
-                const bufferOpts = booking.bufferHours != null
-                  ? { travelBufferMinutes: booking.bufferHours }
-                  : {};
+                const slotStatus = isPaid ? "BOOKED" : "PENCILLED";
+
+                // Apply buffer to stored calendar event times so the calendar
+                // displays the full blocked window (buffer + event + buffer).
+                // bufferHours is a legacy field name that stores minutes.
+                const bufferMs = (booking.timeBlocking === "buffer" && booking.bufferHours)
+                  ? booking.bufferHours * 60 * 1000
+                  : 0;
+                const slotStart = new Date(window.startTime.getTime() - bufferMs);
+                const slotEnd = new Date(window.endTime.getTime() + bufferMs);
+
+                console.log(`[Bookings] Creating ${slotStatus} calendar slot for ${booking.bookingNumber}: ${slotStart.toISOString()} - ${slotEnd.toISOString()} (buffer: ${booking.bufferHours || 0}m)`);
+                // Buffer is already baked into the slot times, so set travelBuffer to 0
+                // to avoid double-counting in the availability check
+                const bufferOpts = { travelBufferMinutes: 0 };
 
                 const result = await createAndBlockSlot(prisma, {
                   title: `${booking.customerName} - ${booking.bookingNumber}`,
-                  startTime: window.startTime,
-                  endTime: window.endTime,
+                  startTime: slotStart,
+                  endTime: slotEnd,
                   bookingId: booking.id,
                   productId: booking.productId || null,
                   locationName: booking.locationName || null,
                   timeBlockingMode: booking.timeBlocking || "buffer",
+                  slotStatus,
                 }, bufferOpts);
 
                 if (result.success && result.slot) {
-                  // Store slot times and link calendar event on the booking
-                  const sh = String(window.startTime.getHours()).padStart(2, "0");
-                  const sm = String(window.startTime.getMinutes()).padStart(2, "0");
-                  const eh = String(window.endTime.getHours()).padStart(2, "0");
-                  const em = String(window.endTime.getMinutes()).padStart(2, "0");
+                  // Store buffer-inclusive slot times in London wall-clock format
+                  const timeFmt = new Intl.DateTimeFormat("en-GB", {
+                    timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hour12: false,
+                  });
+                  const [sh, sm] = timeFmt.format(slotStart).split(":");
+                  const [eh, em] = timeFmt.format(slotEnd).split(":");
                   await prisma[bookingModelName].update({
                     where: { id: booking.id },
                     data: {
@@ -772,34 +801,92 @@ class Lozzalingo {
             };
           }
 
-          if (booking.invoiceNumber && stripe.invoices?.search) {
-            const escapedNumber = String(booking.invoiceNumber).replace(/'/g, "\\'");
-            const invoices = await stripe.invoices.search({
+          // Check Invoice model for any sent invoices linked to this booking
+          if (stripe.invoices?.search) {
+            const sentInvoices = await prisma.invoice.findMany({
+              where: { bookingId: booking.id, status: "SENT", invoiceNumber: { not: null } },
+              orderBy: { createdAt: "desc" },
+            });
+
+            for (const inv of sentInvoices) {
+              const escapedNumber = String(inv.invoiceNumber).replace(/'/g, "\\'");
+              const stripeInvoices = await stripe.invoices.search({
+                query: `number:'${escapedNumber}'`,
+                limit: 1,
+              });
+              const stripeInvoice = stripeInvoices.data?.[0];
+              if (stripeInvoice) {
+                const paid = stripeInvoice.status === "paid" || stripeInvoice.paid === true;
+                if (paid) {
+                  // Mark the local invoice as paid too
+                  await prisma.invoice.update({
+                    where: { id: inv.id },
+                    data: { status: "PAID", paidAt: new Date() },
+                  });
+                  console.log(`[Bookings] Invoice ${inv.invoiceNumber} marked as paid`);
+                }
+                return {
+                  paid,
+                  paymentStatus: stripeInvoice.status,
+                  amountPaid: stripeInvoice.amount_paid,
+                  stripePaymentId: stripeInvoice.payment_intent || null,
+                  message: paid ? "Payment received" : `Stripe invoice ${inv.invoiceNumber} is not paid yet`,
+                };
+              }
+            }
+          }
+
+          // Check if there are any invoices at all for this booking
+          const invoiceCount = await prisma.invoice.count({ where: { bookingId: booking.id } });
+          const missing = [
+            !booking.stripeSessionId && "stripeSessionId",
+            !booking.stripePaymentId && "stripePaymentId",
+            invoiceCount === 0 && "no invoices",
+          ].filter(Boolean);
+          console.log(`[Bookings] Check payment failed for ${booking.bookingNumber} - ${missing.join(", ")}`);
+          return {
+            paid: false,
+            reason: invoiceCount > 0
+              ? "Invoices exist but none have been paid via Stripe yet."
+              : `No Stripe session, payment intent, or invoices found. Send an invoice or process a payment first.`,
+          };
+        },
+        onCheckInvoicePayment: async (booking, invoice) => {
+          if (!stripe) {
+            return { paid: false, reason: "Stripe is not configured" };
+          }
+
+          if (!invoice.invoiceNumber) {
+            return { paid: false, reason: "Invoice has no Stripe invoice number" };
+          }
+
+          console.log(`[Bookings] Checking Stripe payment for invoice ${invoice.invoiceNumber}`);
+
+          if (stripe.invoices?.search) {
+            const escapedNumber = String(invoice.invoiceNumber).replace(/'/g, "\\'");
+            const stripeInvoices = await stripe.invoices.search({
               query: `number:'${escapedNumber}'`,
               limit: 1,
             });
-            const invoice = invoices.data?.[0];
-            if (invoice) {
-              const paid = invoice.status === "paid" || invoice.paid === true;
+            const stripeInvoice = stripeInvoices.data?.[0];
+            if (stripeInvoice) {
+              const paid = stripeInvoice.status === "paid" || stripeInvoice.paid === true;
               return {
                 paid,
-                paymentStatus: invoice.status,
-                amountPaid: invoice.amount_paid,
-                stripePaymentId: invoice.payment_intent || null,
-                message: paid ? "Payment received" : "Stripe invoice is not paid yet",
+                paymentStatus: stripeInvoice.status,
+                amountPaid: stripeInvoice.amount_paid,
+                stripePaymentId: stripeInvoice.payment_intent || null,
+                message: paid ? "Payment received" : `Invoice ${invoice.invoiceNumber} is not paid yet`,
               };
             }
           }
 
-          return {
-            paid: false,
-            reason: "No Stripe session, payment intent, or invoice was found for this booking",
-          };
+          return { paid: false, reason: `Invoice ${invoice.invoiceNumber} not found in Stripe` };
         },
         onPaid: async (booking) => {
           console.log("[Bookings] Booking paid:", booking.bookingNumber);
-          if (booking.calendarEventId && blockSlot) {
-            await blockSlot(prisma, "calendarEvent", booking.calendarEventId, booking.id);
+          if (booking.calendarEventId && bookSlot) {
+            await bookSlot(prisma, "calendarEvent", booking.calendarEventId, booking.id);
           }
           const enriched = await enrichBooking(booking);
           await outreach.trigger("booking_paid", enriched);
@@ -835,25 +922,35 @@ class Lozzalingo {
           const isTest = !!opts?.test;
           console.log(`[Bookings] ${isTest ? "Test i" : "I"}nvoice trigger for:`, booking.bookingNumber);
 
-          const amountPence = booking.quotedPrice || booking.totalAmount;
-          if (!amountPence || amountPence <= 0) {
-            console.error("[Bookings] Cannot create invoice - no amount set on booking");
-            throw new Error("No amount set on booking. Set Total or Quoted price first.");
-          }
-
           const productName = booking.productId
             ? (await prisma.product.findUnique({ where: { id: booking.productId } }))?.name || "Scavenger Hunt"
             : "Scavenger Hunt";
 
           const { createFullInvoice } = require("@lozzalingo/payments/services/invoicing");
 
-          const lineItems = [
-            {
-              description: `${productName} - ${booking.groupSize} players`,
-              unitPricePence: amountPence,
-              quantity: 1,
-            },
-          ];
+          // Use line items from opts (new multi-invoice flow) or fall back to booking amount (legacy)
+          let lineItems;
+          if (opts?.lineItems && opts.lineItems.length > 0) {
+            lineItems = opts.lineItems.map((item) => ({
+              description: item.name || item.description,
+              unitPricePence: item.unitPricePence,
+              quantity: item.quantity,
+            }));
+            console.log(`[Bookings] Using ${lineItems.length} custom line items`);
+          } else {
+            const amountPence = booking.quotedPrice || booking.totalAmount;
+            if (!amountPence || amountPence <= 0) {
+              console.error("[Bookings] Cannot create invoice - no amount set on booking");
+              throw new Error("No amount set on booking. Set Total or Quoted price first.");
+            }
+            lineItems = [
+              {
+                description: `${productName} - ${booking.groupSize} players`,
+                unitPricePence: amountPence,
+                quantity: 1,
+              },
+            ];
+          }
 
           if (isTest) {
             // Test mode: create a real Stripe invoice on the TEST account, send email to admin
@@ -870,7 +967,8 @@ class Lozzalingo {
             const Stripe = require("stripe");
             const testStripe = new Stripe(testKey);
 
-            console.log(`[Bookings] Creating TEST Stripe invoice for ${adminEmail} - ${formatPence(amountPence)}`);
+            const totalPence = lineItems.reduce((s, i) => s + (i.unitPricePence * i.quantity), 0);
+            console.log(`[Bookings] Creating TEST Stripe invoice for ${adminEmail} - ${formatPence(totalPence)}`);
 
             const invoice = await createFullInvoice(testStripe, {
               customerEmail: adminEmail,
@@ -898,7 +996,11 @@ class Lozzalingo {
             });
 
             console.log(`[Bookings] Test invoice ${invoice.number} sent to ${adminEmail} - ${invoice.hosted_invoice_url}`);
-            return;
+            return {
+              stripeInvoiceId: invoice.id,
+              invoiceNumber: invoice.number,
+              hostedInvoiceUrl: invoice.hosted_invoice_url,
+            };
           }
 
           // Live mode: create real Stripe invoice and email the customer
@@ -910,32 +1012,8 @@ class Lozzalingo {
             throw new Error("No customer email on booking");
           }
 
-          // Safeguard: if booking already has an invoice, resend the email instead of creating a duplicate
-          if (booking.invoiceNumber) {
-            console.log(`[Bookings] Booking ${booking.bookingNumber} already has invoice ${booking.invoiceNumber} - resending email only`);
-            // Look up existing invoice from Stripe to get the payment URL
-            try {
-              const escapedNumber = String(booking.invoiceNumber).replace(/'/g, "\\'");
-              const existing = await stripe.invoices.search({ query: `number:'${escapedNumber}'`, limit: 1 });
-              const existingInvoice = existing.data?.[0];
-              if (existingInvoice) {
-                await outreach.trigger("invoice_email", {
-                  ...booking,
-                  invoiceNumber: existingInvoice.number,
-                  amountDuePence: existingInvoice.amount_due,
-                  hostedInvoiceUrl: existingInvoice.hosted_invoice_url,
-                  customerEmail: booking.customerEmail,
-                  productName,
-                });
-                console.log(`[Bookings] Resent invoice email for ${existingInvoice.number} to ${booking.customerEmail}`);
-                return;
-              }
-            } catch (lookupErr) {
-              console.error("[Bookings] Could not look up existing invoice, creating new one:", lookupErr.message);
-            }
-          }
-
-          console.log(`[Bookings] Creating Stripe invoice for ${booking.customerEmail} - ${formatPence(amountPence)}`);
+          const totalPence = lineItems.reduce((s, i) => s + (i.unitPricePence * i.quantity), 0);
+          console.log(`[Bookings] Creating Stripe invoice for ${booking.customerEmail} - ${formatPence(totalPence)}`);
 
           const invoice = await createFullInvoice(stripe, {
             customerEmail: booking.customerEmail,
@@ -951,16 +1029,6 @@ class Lozzalingo {
             },
           });
 
-          // Update booking with invoice number and status
-          await prisma[bookingModelName].update({
-            where: { id: booking.id },
-            data: {
-              invoiceNumber: invoice.number,
-              status: "INVOICE_SENT",
-            },
-          });
-          console.log(`[Bookings] Booking ${booking.bookingNumber} updated with invoice ${invoice.number}`);
-
           // Send invoice email to customer via outreach
           await outreach.trigger("invoice_email", {
             ...booking,
@@ -972,6 +1040,12 @@ class Lozzalingo {
           });
 
           console.log(`[Bookings] Invoice ${invoice.number} sent to ${booking.customerEmail} - ${invoice.hosted_invoice_url}`);
+
+          return {
+            stripeInvoiceId: invoice.id,
+            invoiceNumber: invoice.number,
+            hostedInvoiceUrl: invoice.hosted_invoice_url,
+          };
         },
       });
     }
