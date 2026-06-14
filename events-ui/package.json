@@ -1,0 +1,33 @@
+{
+  "name": "@lozzalingo/events-ui",
+  "version": "1.0.0",
+  "description": "Plug-and-play events UI components, pages, and admin for Lozzalingo apps",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./context": "./src/context/EventsProvider.tsx",
+    "./components": "./src/components/index.ts",
+    "./hooks": "./src/hooks/index.ts",
+    "./lib": "./src/lib/index.ts",
+    "./pages": "./src/pages/index.ts",
+    "./admin": "./src/admin/index.ts",
+    "./admin/pages": "./src/admin/pages/index.ts",
+    "./admin/ui": "./src/admin/ui.tsx"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "next": "^14.0.0",
+    "react-hot-toast": "^2.0.0",
+    "react-icons": "^4.0.0 || ^5.0.0",
+    "@lozzalingo/booking-form": "*",
+    "@lozzalingo/calendar": "*",
+    "@lozzalingo/storage": "*"
+  },
+  "peerDependenciesMeta": {
+    "react-hot-toast": { "optional": true },
+    "@lozzalingo/booking-form": { "optional": true },
+    "@lozzalingo/calendar": { "optional": true },
+    "@lozzalingo/storage": { "optional": true }
+  }
+}

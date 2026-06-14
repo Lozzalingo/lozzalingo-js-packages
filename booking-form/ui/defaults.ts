@@ -1,0 +1,82 @@
+import type { BookingConfig } from "./types";
+
+export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
+  pricePerPerson: 3000,
+  minPlayers: 6,
+  minReserve: 18000,
+  miscBespokePrice: 5000,
+  bespokeSectonPrice: 3000,
+  medalsPricePP: 500,
+  photoPrintsPricePP: 500,
+  travelCharges: {
+    london: { label: "London", pence: 0, canInstantBook: true },
+    close: { label: "Close to London", pence: 12000, canInstantBook: true },
+    medium: { label: "Medium distance", pence: 16000, canInstantBook: true },
+    far: { label: "Far UK", pence: 20000, canInstantBook: true },
+    international: { label: "Outside UK", pence: 0, canInstantBook: false },
+  },
+  durations: [
+    { value: "2", label: "2 hours", gameTime: "1 hour", total: "2 hours", minSections: 0 },
+    { value: "2.5", label: "2.5 hours", gameTime: "1.5 hours", total: "2.5 hours", minSections: 2 },
+    { value: "3", label: "3 hours", gameTime: "2 hours", total: "3 hours", minSections: 3 },
+  ],
+  groupTypes: [
+    { value: "corporate", label: "Corporate" },
+    { value: "hen", label: "Hen" },
+    { value: "birthday", label: "Birthday" },
+    { value: "sten", label: "Sten" },
+    { value: "stag", label: "Stag" },
+    { value: "other", label: "Other" },
+  ],
+  styles: [
+    { value: "professional", label: "Professional" },
+    { value: "cheeky", label: "Cheeky" },
+  ],
+  drinkStyles: [
+    { value: "sober", label: "Sober" },
+    { value: "boozy", label: "Boozy" },
+  ],
+  firstPlacePrizes: [
+    { value: "prosecco", label: "Prosecco" },
+    { value: "no-secco", label: "No-secco" },
+    { value: "bring-our-own", label: "We'll bring our own" },
+  ],
+  miscThemes: [
+    { value: "no-theme", label: "No Theme" },
+    { value: "halloween", label: "Halloween" },
+    { value: "christmas", label: "Christmas" },
+    { value: "easter", label: "Easter" },
+    { value: "summer", label: "Summer" },
+    { value: "winter", label: "Winter" },
+    { value: "guy-fawkes", label: "Guy Fawkes" },
+    { value: "valentines", label: "Valentines" },
+    { value: "bespoke", label: "Bespoke Theme (+\u00A350)" },
+  ],
+  whatsIncluded: [
+    "Professional host",
+    "Physical handouts for your team",
+    "Trophies for 1st, 2nd, and 3rd place",
+    "A prize for first place",
+    "Digital copy of team photos and videos",
+  ],
+  bookingSections: [
+    { id: "your-details", title: "Your Details", icon: "FaUser", enabled: true, order: 1 },
+    { id: "choose-event", title: "Choose Your Event", icon: "FaUsers", enabled: true, order: 2, fields: { showEventSelector: true } },
+    { id: "group-type", title: "Group Type", icon: "FaTheaterMasks", enabled: true, order: 3 },
+    { id: "task-sections", title: "Task Sections", icon: "FaPuzzlePiece", enabled: true, order: 4 },
+    { id: "duration", title: "Duration", icon: "FaClock", enabled: true, order: 5 },
+    { id: "time-blocking", title: "Time Blocking", icon: "FaLock", enabled: false, order: 6 },
+    { id: "add-ons", title: "Add-ons", icon: "FaPlus", enabled: true, order: 7 },
+    { id: "date-time", title: "Choose Date & Time", icon: "FaCalendarAlt", enabled: true, order: 8 },
+    { id: "message", title: "Tell Us About Your Event", icon: "", enabled: true, order: 9 },
+  ],
+  addOns: [
+    { id: "medals", name: "Participation Medals", icon: "FaMedal", description: "A medal for every player to take home", pricePP: 500, enabled: true },
+    { id: "photo-prints", name: "Printable Experience Photos", icon: "FaCamera", description: "Printed experience photos, similar to theme park on-ride photos", pricePP: 500, enabled: true },
+  ],
+  taskSectionTypes: [
+    { id: "location", label: "Location", description: "Area-based tasks", enabled: true, pricePounds: "0" },
+    { id: "miscellaneous", label: "Miscellaneous", description: "Themed tasks", enabled: true, pricePounds: "0" },
+    { id: "bespoke", label: "Personalised", description: "Custom tasks tailored to you", enabled: true, pricePounds: "30.00" },
+  ],
+};

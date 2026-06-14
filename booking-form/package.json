@@ -1,0 +1,18 @@
+{
+  "name": "@lozzalingo/booking-form",
+  "version": "1.0.0",
+  "description": "Shared booking form component with configurable sections, pricing, and API integration",
+  "private": true,
+  "exports": {
+    ".": "./ui/BookingForm.tsx",
+    "./types": "./ui/types.ts",
+    "./defaults": "./ui/defaults.ts",
+    "./pricing": "./ui/pricing.ts",
+    "./lib/booking-calendar": "./lib/booking-calendar.ts"
+  },
+  "peerDependencies": {
+    "react": "^18",
+    "react-icons": "^5.0.0",
+    "next": ">=14"
+  }
+}
