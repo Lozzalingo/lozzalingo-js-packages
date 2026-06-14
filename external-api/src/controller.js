@@ -13,6 +13,7 @@ const { createApiKeyMiddleware } = require("./middleware");
 function createExternalApiController(prisma, options = {}) {
   const {
     articleModelName = "blogPost",
+    categoryModelName = "category",
     slugField = "slug",
     hooks = {},
   } = options;
@@ -20,7 +21,51 @@ function createExternalApiController(prisma, options = {}) {
   const apiKeyService = createApiKeyService(prisma);
   const requireApiKey = createApiKeyMiddleware(apiKeyService);
 
-  console.log("[ExternalAPI] Initialising controller, articleModel:", articleModelName);
+  console.log("[ExternalAPI] Initialising controller, articleModel:", articleModelName, "categoryModel:", categoryModelName);
+
+  // ── Category resolution ─────────────────────────────────────────────────────
+
+  /**
+   * Resolve a category ID from a category object { name, slug } or plain name.
+   * Looks up by name (case-insensitive) in the category model.
+   * Returns the category ID or null if not found.
+   */
+  async function resolveCategoryId(categoryData) {
+    if (!categoryData) return null;
+
+    const name = typeof categoryData === "string" ? categoryData : categoryData.name;
+    if (!name) return null;
+
+    try {
+      // Try exact match first
+      const categories = await prisma[categoryModelName].findMany({
+        where: { name },
+        take: 1,
+      });
+
+      if (categories.length > 0) {
+        console.log("[ExternalAPI] Resolved category:", name, "->", categories[0].id);
+        return categories[0].id;
+      }
+
+      // Try case-insensitive match
+      const allCategories = await prisma[categoryModelName].findMany();
+      const matched = allCategories.find(
+        (c) => c.name.toLowerCase() === name.toLowerCase()
+      );
+
+      if (matched) {
+        console.log("[ExternalAPI] Resolved category (case-insensitive):", name, "->", matched.id);
+        return matched.id;
+      }
+
+      console.log("[ExternalAPI] Category not found:", name);
+      return null;
+    } catch (error) {
+      console.error("[ExternalAPI] Failed to resolve category:", error.message);
+      return null;
+    }
+  }
 
   // ── Slug generation ──────────────────────────────────────────────────────────
 
@@ -112,6 +157,15 @@ function createExternalApiController(prisma, options = {}) {
         categoryId: data.category_id || data.categoryId || null,
       };
 
+      // Resolve category by name if categoryId not provided directly
+      if (!createData.categoryId && data.category) {
+        const resolvedId = await resolveCategoryId(data.category);
+        if (resolvedId) {
+          createData.categoryId = resolvedId;
+          console.log("[ExternalAPI] Category resolved from name:", data.category.name || data.category, "->", resolvedId);
+        }
+      }
+
       // Allow source tracking (same as Python)
       if (data.source_id || data.sourceId) {
         createData.sourceId = data.source_id || data.sourceId;
@@ -174,6 +228,17 @@ function createExternalApiController(prisma, options = {}) {
       }
       if (data.meta_description !== undefined || data.metaDescription !== undefined) {
         updateData.metaDescription = data.meta_description || data.metaDescription;
+      }
+
+      // Resolve category by name or ID
+      if (data.category_id !== undefined || data.categoryId !== undefined) {
+        updateData.categoryId = data.category_id || data.categoryId || null;
+      } else if (data.category) {
+        const resolvedId = await resolveCategoryId(data.category);
+        if (resolvedId) {
+          updateData.categoryId = resolvedId;
+          console.log("[ExternalAPI] Category updated from name:", data.category.name || data.category, "->", resolvedId);
+        }
       }
 
       // Regenerate slug if title changed
