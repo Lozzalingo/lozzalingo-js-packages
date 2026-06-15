@@ -67,6 +67,41 @@ function createExternalApiController(prisma, options = {}) {
     }
   }
 
+  // ── Author resolution ────────────────────────────────────────────────────────
+
+  /**
+   * Resolve a valid author ID. If the provided ID does not exist in the User
+   * table, find or create a system "external-api" user so the FK constraint
+   * is satisfied.
+   */
+  async function resolveAuthorId(providedId) {
+    if (providedId && providedId !== "external-api") {
+      try {
+        const user = await prisma.user.findUnique({ where: { id: providedId } });
+        if (user) return providedId;
+      } catch {
+        // Fall through to system user
+      }
+    }
+
+    // Find or create the system user
+    const systemEmail = "external-api@lozzalingo.com";
+    let systemUser = await prisma.user.findUnique({ where: { email: systemEmail } });
+    if (!systemUser) {
+      systemUser = await prisma.user.create({
+        data: {
+          email: systemEmail,
+          firstName: "External",
+          lastName: "API",
+          userName: "external-api",
+          role: "admin",
+        },
+      });
+      console.log("[ExternalAPI] Created system user:", systemUser.id);
+    }
+    return systemUser.id;
+  }
+
   // ── Slug generation ──────────────────────────────────────────────────────────
 
   function createSlug(title, providedSlug) {
@@ -153,7 +188,7 @@ function createExternalApiController(prisma, options = {}) {
         excerpt: data.excerpt || null,
         metaTitle: data.meta_title || data.metaTitle || null,
         metaDescription: data.meta_description || data.metaDescription || null,
-        authorId: data.author_id || data.authorId || "external-api",
+        authorId: await resolveAuthorId(data.author_id || data.authorId),
         categoryId: data.category_id || data.categoryId || null,
       };
 
