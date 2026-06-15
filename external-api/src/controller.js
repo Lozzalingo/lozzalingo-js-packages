@@ -201,7 +201,7 @@ function createExternalApiController(prisma, options = {}) {
         }
       }
 
-      // Allow source tracking (same as Python)
+      // Source tracking fields are optional - not all models have them
       if (data.source_id || data.sourceId) {
         createData.sourceId = data.source_id || data.sourceId;
       }
@@ -209,7 +209,20 @@ function createExternalApiController(prisma, options = {}) {
         createData.sourceUrl = data.source_url || data.sourceUrl;
       }
 
-      const article = await prisma[articleModelName].create({ data: createData });
+      let article;
+      try {
+        article = await prisma[articleModelName].create({ data: createData });
+      } catch (createError) {
+        // If unknown fields cause the error, retry without them
+        if (createError.message && createError.message.includes("Unknown arg")) {
+          console.log("[ExternalAPI] Retrying create without optional source fields");
+          delete createData.sourceId;
+          delete createData.sourceUrl;
+          article = await prisma[articleModelName].create({ data: createData });
+        } else {
+          throw createError;
+        }
+      }
 
       console.log("[ExternalAPI] Article created:", article.id, "slug:", article.slug);
 
