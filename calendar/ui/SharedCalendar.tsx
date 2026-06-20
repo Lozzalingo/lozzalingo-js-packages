@@ -289,6 +289,7 @@ export default function SharedCalendar({
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlotLabel, setSelectedSlotLabel] = useState<string | null>(null);
+  const timeSlotPickerRef = useRef<HTMLDivElement>(null);
 
   // Minimum bookable date
   const minDate = useMemo(() => toDateKey(firstBookable), [firstBookable]);
@@ -406,6 +407,16 @@ export default function SharedCalendar({
     fetchSlots();
   }, [selectedDate, durationMinutes, apiBaseUrl, blockingEventKey]);
 
+  // Scroll time slot picker into view when a date is selected or slots finish loading
+  useEffect(() => {
+    if (selectedDate && !loadingSlots && timeSlotPickerRef.current) {
+      // Small delay to let the DOM render the time slot picker
+      setTimeout(() => {
+        timeSlotPickerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 150);
+    }
+  }, [selectedDate, loadingSlots]);
+
   // Merge passed events with fetched events
   const allEvents = useMemo(() => [...events, ...fetchedEvents], [events, fetchedEvents]);
 
@@ -500,7 +511,7 @@ export default function SharedCalendar({
   // ── Time-slot picker (shared) ─────────────────────────────────────────────
 
   const timeSlotPicker = durationMinutes && selectedDate ? (
-    <div className={`px-4 py-4 border-t ${dk ? "border-gray-700" : "border-gray-200"}`}>
+    <div ref={timeSlotPickerRef} className={`px-4 py-4 border-t ${dk ? "border-gray-700" : "border-gray-200"}`}>
       <h4 className={`text-sm font-semibold mb-2 ${dk ? "text-white" : "text-gray-900"}`}>
         {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-GB", {
           weekday: "long",
