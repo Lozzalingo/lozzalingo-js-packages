@@ -35,6 +35,9 @@ const DEFAULT_CONFIG = {
     // Dashboard (default on - shows active modules)
     dashboard: true,
 
+    // CRM (default off, opt-in)
+    crm: false,
+
     // Optional (default off)
     analytics: false,
     game_engine: false,
@@ -70,6 +73,7 @@ const DEFAULT_CONFIG = {
     orders: "/api/orders",
     marketplace_sync: "/api/marketplace-sync",
     purchases: "/api/purchases",
+    crm: "/api/crm",
   },
 
   // CORS defaults
@@ -108,6 +112,22 @@ const DEFAULT_CONFIG = {
   outreach: {
     adminEmail: null, // From ADMIN_EMAIL env var
     brandName: null, // Falls back to site.name
+  },
+
+  crm: {
+    customerPrefix: "LZ",
+    scoring: {
+      booking_completed: 20,
+      email_opened: 2,
+      email_clicked: 5,
+      website_visit: 1,
+      product_used: 10,
+      app_interaction: 5,
+      returning_visitor: 5,
+      decay_3_months: -5,
+      decay_6_months: -10,
+      decay_12_months: -15,
+    },
   },
 
   experiences: {

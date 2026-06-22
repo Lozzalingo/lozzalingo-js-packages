@@ -25,6 +25,8 @@ export { default as StoragePage } from "./StoragePage";
 export { default as ConfigPage } from "./ConfigPage";
 export { default as AuthPage } from "./AuthPage";
 export { default as ExternalApiPage } from "./ExternalApiPage";
+export { default as BlogAdminPage } from "./BlogAdminPage";
+export { default as CrmPage } from "./CrmPage";
 
 // Auth pages (mirrors Python framework's auth templates)
 export { default as SignInPage } from "./SignInPage";

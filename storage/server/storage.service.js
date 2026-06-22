@@ -8,12 +8,17 @@ const path = require('path');
 const fs = require('fs');
 
 function createStorageService(options = {}) {
+  // Auto-detect provider: if DO Spaces credentials exist, use 'spaces' unless explicitly set to 'local'
+  const detectedProvider = process.env.STORAGE_TYPE ||
+    ((process.env.DO_SPACES_KEY && process.env.DO_SPACES_SECRET && process.env.DO_SPACES_REGION) ? 'spaces' : 'local');
+
   const {
-    provider = process.env.STORAGE_TYPE || 'local',
+    provider = detectedProvider,
     spacesRegion = process.env.DO_SPACES_REGION,
-    spacesName = process.env.DO_SPACES_NAME,
+    spacesName = process.env.DO_SPACES_NAME || process.env.DO_SPACES_BUCKET,
     spacesKey = process.env.DO_SPACES_KEY,
     spacesSecret = process.env.DO_SPACES_SECRET,
+    spacesFolder = process.env.DO_SPACES_FOLDER || '',
     localPath = './public/uploads',
     maxWidth = 1920,
     convertToWebP = true,
@@ -81,7 +86,9 @@ function createStorageService(options = {}) {
     const { buffer, filename: processedFilename } = await processImage(fileBuffer, filename);
     const timestamp = Date.now();
     const safeName = `${path.parse(processedFilename).name}_${timestamp}${path.extname(processedFilename)}`;
-    const key = subfolder ? `${subfolder}/${safeName}` : safeName;
+    // Build Spaces key with optional app folder prefix (e.g. ai-blog-builder/blog-headers/file.webp)
+    const pathParts = [spacesFolder, subfolder, safeName].filter(Boolean);
+    const key = pathParts.join('/');
 
     if (provider === 'spaces' && s3Client) {
       try {
@@ -120,9 +127,10 @@ function createStorageService(options = {}) {
     if (provider === 'spaces' && s3Client) {
       try {
         const { ListObjectsV2Command } = require('@aws-sdk/client-s3');
+        const prefix = [spacesFolder, subfolder].filter(Boolean).join('/');
         const result = await s3Client.send(new ListObjectsV2Command({
           Bucket: spacesName,
-          Prefix: subfolder ? `${subfolder}/` : '',
+          Prefix: prefix ? `${prefix}/` : '',
         }));
 
         return (result.Contents || []).map(obj => ({

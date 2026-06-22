@@ -3,6 +3,20 @@ const { findOrCreateCustomer } = require("./services/customer");
 const { BOOKING_STATUSES, isValidStatus } = require("./services/statuses");
 const { pushBookingToSheet } = require("./services/google-sheets");
 
+// Lazy-load CRM customer service (falls back to built-in if not installed)
+let _crmFindOrCreate;
+function getCrmFindOrCreate() {
+  if (_crmFindOrCreate === undefined) {
+    try {
+      _crmFindOrCreate = require("@lozzalingo/crm/services/customer").findOrCreateCustomer;
+      console.log("[Bookings] CRM-aware findOrCreateCustomer loaded");
+    } catch (e) {
+      _crmFindOrCreate = null;
+    }
+  }
+  return _crmFindOrCreate;
+}
+
 function createBookingController(prisma, options = {}) {
   const {
     modelName = "booking",
@@ -48,6 +62,7 @@ function createBookingController(prisma, options = {}) {
         duration,
         timeBlocking,
         message,
+        fingerprint,
       } = req.body;
 
       console.log(`[Bookings] Create booking request - name: ${customerName}, email: ${customerEmail}, productId: ${productId || "none"}`);
@@ -72,16 +87,31 @@ function createBookingController(prisma, options = {}) {
       }
 
       // Find or create customer if firstName and lastName provided
+      // Use CRM-aware version if available (adds fingerprint, customer number, etc.)
       let customer = null;
       if (firstName && lastName && customerEmail) {
-        customer = await findOrCreateCustomer(prisma, {
-          firstName,
-          lastName,
-          email: customerEmail,
-          phone: customerPhone || null,
-          company: companyName || null,
-          source: source || "website",
-        });
+        const crmFindOrCreate = getCrmFindOrCreate();
+        if (crmFindOrCreate) {
+          customer = await crmFindOrCreate(prisma, {
+            firstName,
+            lastName,
+            email: customerEmail,
+            phone: customerPhone || null,
+            company: companyName || null,
+            fingerprint: fingerprint || null,
+            source: source || "website",
+            customerPrefix: brandPrefix,
+          });
+        } else {
+          customer = await findOrCreateCustomer(prisma, {
+            firstName,
+            lastName,
+            email: customerEmail,
+            phone: customerPhone || null,
+            company: companyName || null,
+            source: source || "website",
+          });
+        }
         if (customer) {
           console.log(`[Bookings] Customer resolved: ${customer.id}`);
         }

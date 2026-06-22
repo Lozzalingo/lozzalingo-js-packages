@@ -341,6 +341,28 @@ function createVisitorController(prisma, options = {}) {
         });
       }
 
+      // CRM: if fingerprint matches a known customer, update lastActivityAt
+      if (fingerprint && !isBot) {
+        try {
+          const matchedCustomer = await prisma.customer.findFirst({
+            where: { fingerprint },
+            select: { id: true },
+          });
+          if (matchedCustomer) {
+            await prisma.customer.update({
+              where: { id: matchedCustomer.id },
+              data: { lastActivityAt: new Date() },
+            });
+            console.log("[CRM] Fingerprint matched customer:", matchedCustomer.id);
+          }
+        } catch (crmErr) {
+          // Non-fatal: Customer table might not have fingerprint column yet
+          if (!crmErr.message.includes("Unknown column") && !crmErr.message.includes("does not exist")) {
+            console.error("[CRM] Fingerprint match error:", crmErr.message);
+          }
+        }
+      }
+
       console.log("[Analytics] Tracked visitor:", visitor.id);
       res.status(200).json({ success: true, visitorId: visitor.id });
     } catch (error) {

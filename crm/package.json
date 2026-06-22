@@ -1,0 +1,19 @@
+{
+  "name": "@lozzalingo/crm",
+  "version": "1.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./routes": "./src/routes.js",
+    "./controller": "./src/controller.js",
+    "./services/customer": "./src/services/customer.js",
+    "./services/scoring": "./src/services/scoring.js",
+    "./services/activity": "./src/services/activity.js",
+    "./services/campaign": "./src/services/campaign.js",
+    "./services/customer-number": "./src/services/customer-number.js"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.10.0",
+    "express": "^4.0.0 || ^5.0.0"
+  }
+}
