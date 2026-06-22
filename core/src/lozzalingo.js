@@ -1081,7 +1081,6 @@ class Lozzalingo {
         },
       });
     }
-  }
 
     // Wire bookings -> CRM (if both enabled)
     if (this.controllers.booking && this.controllers.crm) {
