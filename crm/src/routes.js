@@ -183,6 +183,42 @@ function createCrmRoutes(prisma, options = {}) {
     }
   });
 
+  // ── DELETE /customers/:id - Delete customer and related data ─────────────
+
+  router.delete("/customers/:id", async (req, res) => {
+    try {
+      const customerId = req.params.id;
+
+      // Check customer exists
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { id: true, customerNumber: true, email: true },
+      });
+
+      if (!customer) {
+        return res.status(404).json({ error: "Customer not found" });
+      }
+
+      // Delete related records first (foreign key constraints)
+      await Promise.all([
+        prisma.customerActivity.deleteMany({ where: { customerId } }),
+        prisma.customerScore.deleteMany({ where: { customerId } }),
+        prisma.marketingPreference.deleteMany({ where: { customerId } }),
+        prisma[campaignSendModel].deleteMany({ where: { customerId } }),
+        prisma.subscriberConfirmation.deleteMany({ where: { customerId } }),
+      ]);
+
+      // Delete the customer
+      await prisma.customer.delete({ where: { id: customerId } });
+
+      console.log(`[CRM] Deleted customer: ${customer.customerNumber} (${customer.email})`);
+      res.json({ success: true, deleted: customer.customerNumber });
+    } catch (error) {
+      console.error("[CRM] Failed to delete customer:", error.message);
+      res.status(500).json({ error: "Failed to delete customer" });
+    }
+  });
+
   // ── GET /customers/:id/activities - Activity history ─────────────────────
 
   router.get("/customers/:id/activities", async (req, res) => {

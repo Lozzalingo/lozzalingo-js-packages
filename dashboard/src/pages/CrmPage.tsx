@@ -224,6 +224,40 @@ export default function CrmPage() {
     setSelectedCustomer(null);
   };
 
+  const handleDelete = async (id: string, customerNumber: string) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete customer ${customerNumber}? This will remove all their activities, scores, and campaign history. This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      console.log("[CrmAdmin] Deleting customer:", customerNumber);
+      const res = await fetch(`${apiBase}/api/crm/customers/${id}`, {
+        method: "DELETE",
+        headers: headers(),
+      });
+
+      if (res.ok) {
+        console.log("[CrmAdmin] Deleted:", customerNumber);
+        // If we're in detail view, go back to list
+        if (view === "detail") {
+          setView("list");
+          setSelectedCustomer(null);
+        }
+        // Refresh the list and stats
+        fetchCustomers(pagination.page);
+        fetchDashboard();
+      } else {
+        const data = await res.json();
+        console.error("[CrmAdmin] Failed to delete:", data.error);
+        alert(`Failed to delete customer: ${data.error}`);
+      }
+    } catch (err) {
+      console.error("[CrmAdmin] Error deleting customer:", err);
+      alert("Failed to delete customer. Check the console for details.");
+    }
+  };
+
   // -- Icon -------------------------------------------------------------------
 
   const icon = (
@@ -241,20 +275,39 @@ export default function CrmPage() {
   if (view === "detail" && selectedCustomer) {
     return (
       <div className="p-8 text-white">
-        <ModulePageHeader
-          icon={icon}
-          title={`${selectedCustomer.firstName} ${selectedCustomer.lastName}`}
-          description={`${selectedCustomer.customerNumber} - ${selectedCustomer.email}`}
-          backHref="#"
-          backLabel="Customers"
+        {/* Custom back link that uses onClick instead of href */}
+        <button
+          onClick={handleBack}
+          className="inline-flex items-center gap-2 text-gray-400 hover:text-white text-sm mb-6 transition"
         >
-          <button
-            onClick={handleBack}
-            className="inline-flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition"
-          >
-            Back to list
-          </button>
-        </ModulePageHeader>
+          <svg viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+            <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
+          </svg>
+          Customers
+        </button>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-3">
+              {icon} {selectedCustomer.firstName} {selectedCustomer.lastName}
+            </h1>
+            <p className="text-gray-400 mt-1">
+              {selectedCustomer.customerNumber} - {selectedCustomer.email}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() =>
+                handleDelete(selectedCustomer.id, selectedCustomer.customerNumber)
+              }
+              className="inline-flex items-center gap-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 hover:text-red-300 text-sm font-medium px-4 py-2.5 rounded-lg transition"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              Delete
+            </button>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Customer info card */}
