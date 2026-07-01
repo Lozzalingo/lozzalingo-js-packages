@@ -115,16 +115,84 @@ function createCrmRoutes(prisma, options = {}) {
 
   router.get("/customers/:id", async (req, res) => {
     try {
+      // Build include - bookings relation is site-specific (not all sites have it)
+      const include = {
+        score: true,
+        activities: {
+          orderBy: { createdAt: "desc" },
+          take: 50,
+        },
+        marketingPreferences: true,
+      };
+
+      // Check if the Customer model has a bookings relation
+      const customerFields = prisma.customer.fields || {};
+      const hasBookings = !!customerFields.bookings || !!prisma.booking;
+      if (hasBookings) {
+        try {
+          // Test if bookings relation exists on Customer by checking Prisma model metadata
+          const testInclude = {
+            ...include,
+            bookings: {
+              orderBy: { createdAt: "desc" },
+              take: 20,
+              select: {
+                id: true,
+                bookingNumber: true,
+                customerName: true,
+                status: true,
+                eventDate: true,
+                totalAmount: true,
+                groupSize: true,
+                createdAt: true,
+              },
+            },
+          };
+          const customer = await prisma.customer.findUnique({
+            where: { id: req.params.id },
+            include: testInclude,
+          });
+
+          if (!customer) {
+            return res.status(404).json({ error: "Customer not found" });
+          }
+
+          // Parse score breakdown
+          if (customer.score?.breakdown) {
+            try {
+              customer.score.breakdown = JSON.parse(customer.score.breakdown);
+            } catch (e) {
+              // Already parsed or invalid
+            }
+          }
+
+          // Fetch campaign sends
+          let campaignSends = [];
+          try {
+            campaignSends = await prisma[campaignSendModel].findMany({
+              where: { customerId: req.params.id },
+              orderBy: { sentAt: "desc" },
+              take: 50,
+              include: {
+                campaign: { select: { name: true, subject: true } },
+              },
+            });
+          } catch (e) {
+            console.error("[CRM] Failed to fetch campaign sends:", e.message);
+          }
+
+          console.log(`[CRM] Customer detail: ${customer.customerNumber || customer.id}`);
+          return res.json({ ...customer, campaignSends });
+        } catch (bookingErr) {
+          // Bookings relation doesn't exist on this site, fall through
+          console.log("[CRM] Bookings relation not available, fetching without");
+        }
+      }
+
+      // Fallback: fetch without bookings
       const customer = await prisma.customer.findUnique({
         where: { id: req.params.id },
-        include: {
-          score: true,
-          activities: {
-            orderBy: { createdAt: "desc" },
-            take: 50,
-          },
-          marketingPreferences: true,
-        },
+        include,
       });
 
       if (!customer) {
@@ -140,8 +208,23 @@ function createCrmRoutes(prisma, options = {}) {
         }
       }
 
+      // Fetch campaign sends
+      let campaignSends = [];
+      try {
+        campaignSends = await prisma[campaignSendModel].findMany({
+          where: { customerId: req.params.id },
+          orderBy: { sentAt: "desc" },
+          take: 50,
+          include: {
+            campaign: { select: { name: true, subject: true } },
+          },
+        });
+      } catch (e) {
+        console.error("[CRM] Failed to fetch campaign sends:", e.message);
+      }
+
       console.log(`[CRM] Customer detail: ${customer.customerNumber || customer.id}`);
-      res.json(customer);
+      res.json({ ...customer, bookings: [], campaignSends });
     } catch (error) {
       console.error("[CRM] Failed to get customer:", error.message);
       res.status(500).json({ error: "Failed to get customer" });
@@ -155,7 +238,8 @@ function createCrmRoutes(prisma, options = {}) {
       const allowedFields = [
         "firstName", "lastName", "phone", "company", "jobTitle",
         "dateOfBirth", "country", "region", "source", "status",
-        "marketingOptIn", "referralName", "referralEmail", "notes",
+        "marketingOptIn", "referralName", "referralEmail",
+        "linkedinUrl", "instagramHandle", "websiteUrl", "notes",
       ];
 
       const data = {};
