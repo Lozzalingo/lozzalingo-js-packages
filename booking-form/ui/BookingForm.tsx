@@ -16,7 +16,7 @@ import { formatPence, calculateTotal, getTaskSectionPricePence } from "./pricing
 
 // Re-export types and defaults for convenience
 export { DEFAULT_BOOKING_CONFIG } from "./defaults";
-export type { BookingFormProps, BookingConfig, BookingFormSection, BookingAddOn, TaskSectionTypeConfig, BookingPayload, BookingFormApi, NormalizedProduct, NormalizedLocation } from "./types";
+export type { BookingFormProps, BookingConfig, BookingFormSection, BookingAddOn, TaskSectionTypeConfig, BookingPayload, BookingFormApi, NormalizedProduct, NormalizedLocation, SectionFieldGroup } from "./types";
 
 // Icon mapping for task section types
 const TASK_SECTION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -210,6 +210,15 @@ export default function BookingForm({
   const removeSection = (i: number) => { setTaskSections(taskSections.filter((_, idx) => idx !== i)); };
   const updateSection = (i: number, u: Partial<TaskSection>) => { setTaskSections(taskSections.map((s, idx) => idx === i ? { ...s, ...u } : s)); clearError("task-sections"); };
 
+  // ─── Field Group Visibility ─────────────────────────────────────────────────
+  /** Check whether a specific field group within a section is enabled */
+  const isFieldEnabled = (sectionId: string, fieldGroupId: string): boolean => {
+    const section = cfg.bookingSections?.find((s) => s.id === sectionId);
+    if (!section?.fieldGroups) return true; // No field groups defined = all visible
+    const fg = section.fieldGroups.find((g) => g.id === fieldGroupId);
+    return fg?.enabled !== false; // Missing = default visible
+  };
+
   const clearError = (field: string) => {
     setFormErrors((prev) => {
       if (!prev[field]) return prev;
@@ -247,20 +256,38 @@ export default function BookingForm({
 
   const validateForm = (): Record<string, string> => {
     const errors: Record<string, string> = {};
-    if (!form.firstName || !form.lastName) errors.name = "Please enter your first and last name.";
-    if (!form.email) errors.email = "Please enter your email address.";
-    if (!form.phone) errors.phone = "Please enter your phone number.";
-    if (isCorporate && !form.companyName) errors.company = "Company name is required for corporate bookings.";
-    if (isOther && !form.otherGroupType) errors["other-group-type"] = "Please tell us what type of group this is.";
-    if (!form.productId) errors.event = "Please choose your event.";
-    if (groupSizeNum < cfg.minPlayers) errors["group-size"] = `Minimum group size is ${cfg.minPlayers} players.`;
-    if (!form.groupType) errors["group-type"] = "Please select a group type.";
-    if (!form.style) errors.style = "Please select a style.";
-    if (!form.drinkStyle) errors["drink-style"] = "Please choose sober or boozy.";
-    if (!form.firstPlacePrize) errors["first-place-prize"] = "Please choose a first place prize.";
-    if (taskSections.length === 0) errors["task-sections"] = "Please add at least one task section.";
-    else if (!sectionsValid) errors["task-sections"] = "Please complete all task sections.";
-    if (!form.duration) errors.duration = "Please choose a duration.";
+    // Your Details - only validate enabled fields
+    const detailsEnabled = cfg.bookingSections?.find((s) => s.id === "your-details")?.enabled !== false;
+    if (detailsEnabled) {
+      if (isFieldEnabled("your-details", "first-name") && !form.firstName) errors.name = "Please enter your first name.";
+      if (isFieldEnabled("your-details", "last-name") && !form.lastName) {
+        errors.name = errors.name ? "Please enter your first and last name." : "Please enter your last name.";
+      }
+      if (isFieldEnabled("your-details", "email") && !form.email) errors.email = "Please enter your email address.";
+      if (isFieldEnabled("your-details", "phone") && !form.phone) errors.phone = "Please enter your phone number.";
+      if (isFieldEnabled("your-details", "company") && isCorporate && !form.companyName) errors.company = "Company name is required for corporate bookings.";
+    }
+    // Choose Event
+    if (isFieldEnabled("choose-event", "event-selector") && !form.productId) errors.event = "Please choose your event.";
+    if (isFieldEnabled("choose-event", "group-size") && groupSizeNum < cfg.minPlayers) errors["group-size"] = `Minimum group size is ${cfg.minPlayers} players.`;
+    if (isFieldEnabled("choose-event", "first-place-prizes") && !form.firstPlacePrize) errors["first-place-prize"] = "Please choose a first place prize.";
+    // Group Type
+    if (isFieldEnabled("group-type", "group-types")) {
+      if (!form.groupType) errors["group-type"] = "Please select a group type.";
+      if (isOther && !form.otherGroupType) errors["other-group-type"] = "Please tell us what type of group this is.";
+    }
+    if (isFieldEnabled("group-type", "styles") && !form.style) errors.style = "Please select a style.";
+    if (isFieldEnabled("group-type", "drink-styles") && !form.drinkStyle) errors["drink-style"] = "Please choose sober or boozy.";
+    // Task Sections
+    const taskSectionsEnabled = cfg.bookingSections?.find((s) => s.id === "task-sections")?.enabled !== false;
+    if (taskSectionsEnabled) {
+      if (taskSections.length === 0) errors["task-sections"] = "Please add at least one task section.";
+      else if (!sectionsValid) errors["task-sections"] = "Please complete all task sections.";
+    }
+    // Duration
+    const durationEnabled = cfg.bookingSections?.find((s) => s.id === "duration")?.enabled !== false;
+    if (durationEnabled && !form.duration) errors.duration = "Please choose a duration.";
+    // Date & Time
     if (canInstantBook && (!form.eventDate || !form.eventTime)) errors["date-time"] = "Please select a date and time.";
     return errors;
   };
@@ -330,55 +357,101 @@ export default function BookingForm({
   }, []);
 
   const sectionRenderers: Record<string, () => React.ReactNode> = {
-    "your-details": () => (
-      <section key="your-details">
-        <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaUser className="text-cta" /> Your Details</h2>
-        <div className="space-y-4">
-          <div id="field-name" className="grid sm:grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-text-primary mb-1">First Name *</label><input type="text" required value={form.firstName} onChange={(e) => { setForm({ ...form, firstName: e.target.value }); clearError("name"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.name ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Jane" /></div>
-            <div><label className="block text-sm font-medium text-text-primary mb-1">Last Name *</label><input type="text" required value={form.lastName} onChange={(e) => { setForm({ ...form, lastName: e.target.value }); clearError("name"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.name ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Smith" /></div>
-            {formErrors.name && <p className="text-sm text-red-600 col-span-full">{formErrors.name}</p>}
+    "your-details": () => {
+      const showFirstName = isFieldEnabled("your-details", "first-name");
+      const showLastName = isFieldEnabled("your-details", "last-name");
+      const showEmail = isFieldEnabled("your-details", "email");
+      const showPhone = isFieldEnabled("your-details", "phone");
+      const showCompany = isFieldEnabled("your-details", "company");
+      const nameFields = [showFirstName, showLastName].filter(Boolean).length;
+      const contactFields = [showEmail, showPhone].filter(Boolean).length;
+      return (
+        <section key="your-details">
+          <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaUser className="text-cta" /> Your Details</h2>
+          <div className="space-y-4">
+            {(showFirstName || showLastName) && (
+              <div id="field-name" className={`grid ${nameFields === 2 ? "sm:grid-cols-2" : ""} gap-4`}>
+                {showFirstName && <div><label className="block text-sm font-medium text-text-primary mb-1">First Name *</label><input type="text" required value={form.firstName} onChange={(e) => { setForm({ ...form, firstName: e.target.value }); clearError("name"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.name ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Jane" /></div>}
+                {showLastName && <div><label className="block text-sm font-medium text-text-primary mb-1">Last Name *</label><input type="text" required value={form.lastName} onChange={(e) => { setForm({ ...form, lastName: e.target.value }); clearError("name"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.name ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Smith" /></div>}
+                {formErrors.name && <p className="text-sm text-red-600 col-span-full">{formErrors.name}</p>}
+              </div>
+            )}
+            {(showEmail || showPhone) && (
+              <div className={`grid ${contactFields === 2 ? "sm:grid-cols-2" : ""} gap-4`}>
+                {showEmail && <div id="field-email"><label className="block text-sm font-medium text-text-primary mb-1"><FaEnvelope className="inline mr-1 text-text-secondary" />Email *</label><input type="email" required value={form.email} onChange={(e) => { setForm({ ...form, email: e.target.value }); clearError("email"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.email ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="jane@company.com" />{formErrors.email && <p className="text-sm text-red-600 mt-1">{formErrors.email}</p>}</div>}
+                {showPhone && <div id="field-phone"><label className="block text-sm font-medium text-text-primary mb-1"><FaPhone className="inline mr-1 text-text-secondary" />Phone *</label><input type="tel" required value={form.phone} onChange={(e) => { setForm({ ...form, phone: e.target.value }); clearError("phone"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.phone ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="+44 7700 900000" />{formErrors.phone && <p className="text-sm text-red-600 mt-1">{formErrors.phone}</p>}</div>}
+              </div>
+            )}
           </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div id="field-email"><label className="block text-sm font-medium text-text-primary mb-1"><FaEnvelope className="inline mr-1 text-text-secondary" />Email *</label><input type="email" required value={form.email} onChange={(e) => { setForm({ ...form, email: e.target.value }); clearError("email"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.email ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="jane@company.com" />{formErrors.email && <p className="text-sm text-red-600 mt-1">{formErrors.email}</p>}</div>
-            <div id="field-phone"><label className="block text-sm font-medium text-text-primary mb-1"><FaPhone className="inline mr-1 text-text-secondary" />Phone *</label><input type="tel" required value={form.phone} onChange={(e) => { setForm({ ...form, phone: e.target.value }); clearError("phone"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.phone ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="+44 7700 900000" />{formErrors.phone && <p className="text-sm text-red-600 mt-1">{formErrors.phone}</p>}</div>
+        </section>
+      );
+    },
+    "choose-event": () => {
+      const showGroupSize = isFieldEnabled("choose-event", "group-size");
+      const showEventSel = isFieldEnabled("choose-event", "event-selector") && showEventSelector;
+      const showWhatsIncluded = isFieldEnabled("choose-event", "whats-included");
+      const showFirstPlacePrizes = isFieldEnabled("choose-event", "first-place-prizes");
+      const showBasePricing = isFieldEnabled("choose-event", "base-pricing");
+      const showAddonPricing = isFieldEnabled("choose-event", "addon-pricing");
+      return (
+        <section key="choose-event">
+          <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaUsers className="text-cta" /> Choose Your Event</h2>
+          <div className="space-y-4">
+            {showGroupSize && (
+              <div id="field-group-size"><label className="block text-sm font-medium text-text-primary mb-1">Group Size * <span className="font-normal text-text-secondary">(minimum {cfg.minPlayers})</span></label><div className="relative"><FaUsers className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" /><input type="number" required min={cfg.minPlayers} value={form.groupSize} onChange={(e) => { setForm({ ...form, groupSize: e.target.value }); clearError("group-size"); }} className={`w-full pl-10 pr-4 py-3 rounded-lg border ${formErrors["group-size"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder={String(cfg.minPlayers)} /></div>{formErrors["group-size"] ? <p className="text-sm text-red-600 mt-1">{formErrors["group-size"]}</p> : groupSizeNum > 0 && groupSizeNum < cfg.minPlayers && <p className="text-xs text-cta mt-1">Minimum {cfg.minPlayers} players required</p>}</div>
+            )}
+            {showEventSel && (
+              <div id="field-event"><label className="block text-sm font-medium text-text-primary mb-1">Choose Your Event *</label><select required value={form.productId} onChange={(e) => { setForm({ ...form, productId: e.target.value }); clearError("event"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.event ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition bg-white`}><option value="">Select an event...</option>{loadingProducts ? <option disabled>Loading...</option> : products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.duration ? ` (${p.duration})` : ""}</option>)}</select>{formErrors.event && <p className="text-sm text-red-600 mt-1">{formErrors.event}</p>}</div>
+            )}
+            {showWhatsIncluded && (
+              <div className="p-5 bg-surface rounded-xl border border-border">
+                <h3 className="font-bold text-text-primary mb-3">What&apos;s Included</h3>
+                <ul className="space-y-2">{cfg.whatsIncluded.map((item) => (<li key={item} className="text-sm text-text-secondary flex items-start gap-2"><FaCheck className="text-success text-xs mt-1 flex-shrink-0" /><span>{item}</span></li>))}</ul>
+                {showBasePricing && (
+                  <div className="mt-4 pt-3 border-t border-border"><p className="text-sm text-text-primary font-semibold">{formatPence(cfg.pricePerPerson)} per person</p><p className="text-xs text-text-secondary mt-1">Minimum reserve: {formatPence(cfg.minReserve)} (covers {cfg.minPlayers} players). Additional players at {formatPence(cfg.pricePerPerson)} each.</p></div>
+                )}
+              </div>
+            )}
+            {!showWhatsIncluded && showBasePricing && (
+              <div className="p-4 bg-surface rounded-xl border border-border">
+                <p className="text-sm text-text-primary font-semibold">{formatPence(cfg.pricePerPerson)} per person</p>
+                <p className="text-xs text-text-secondary mt-1">Minimum reserve: {formatPence(cfg.minReserve)} (covers {cfg.minPlayers} players). Additional players at {formatPence(cfg.pricePerPerson)} each.</p>
+              </div>
+            )}
+            {showFirstPlacePrizes && (
+              <div id="field-first-place-prize"><label className="block text-sm font-medium text-text-primary mb-2">First Place Prize *</label><div className={`grid grid-cols-1 sm:grid-cols-3 gap-2 ${formErrors["first-place-prize"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{FIRST_PLACE_PRIZES.map((fp) => (<label key={fp.value} className={`py-3 px-3 rounded-lg text-sm font-medium transition border text-center cursor-pointer ${form.firstPlacePrize === fp.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="firstPlacePrize" value={fp.value} checked={form.firstPlacePrize === fp.value} onChange={(e) => { setForm({ ...form, firstPlacePrize: e.target.value }); clearError("first-place-prize"); }} className="sr-only" required />{fp.label}</label>))}</div>{formErrors["first-place-prize"] && <p className="text-sm text-red-600 mt-1">{formErrors["first-place-prize"]}</p>}</div>
+            )}
           </div>
-        </div>
-      </section>
-    ),
-    "choose-event": () => (
-      <section key="choose-event">
-        <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaUsers className="text-cta" /> Choose Your Event</h2>
-        <div className="space-y-4">
-          <div id="field-group-size"><label className="block text-sm font-medium text-text-primary mb-1">Group Size * <span className="font-normal text-text-secondary">(minimum {cfg.minPlayers})</span></label><div className="relative"><FaUsers className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" /><input type="number" required min={cfg.minPlayers} value={form.groupSize} onChange={(e) => { setForm({ ...form, groupSize: e.target.value }); clearError("group-size"); }} className={`w-full pl-10 pr-4 py-3 rounded-lg border ${formErrors["group-size"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder={String(cfg.minPlayers)} /></div>{formErrors["group-size"] ? <p className="text-sm text-red-600 mt-1">{formErrors["group-size"]}</p> : groupSizeNum > 0 && groupSizeNum < cfg.minPlayers && <p className="text-xs text-cta mt-1">Minimum {cfg.minPlayers} players required</p>}</div>
-          {showEventSelector && (
-            <div id="field-event"><label className="block text-sm font-medium text-text-primary mb-1">Choose Your Event *</label><select required value={form.productId} onChange={(e) => { setForm({ ...form, productId: e.target.value }); clearError("event"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.event ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition bg-white`}><option value="">Select an event...</option>{loadingProducts ? <option disabled>Loading...</option> : products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.duration ? ` (${p.duration})` : ""}</option>)}</select>{formErrors.event && <p className="text-sm text-red-600 mt-1">{formErrors.event}</p>}</div>
-          )}
-          <div className="p-5 bg-surface rounded-xl border border-border">
-            <h3 className="font-bold text-text-primary mb-3">What&apos;s Included</h3>
-            <ul className="space-y-2">{cfg.whatsIncluded.map((item) => (<li key={item} className="text-sm text-text-secondary flex items-start gap-2"><FaCheck className="text-success text-xs mt-1 flex-shrink-0" /><span>{item}</span></li>))}</ul>
-            <div className="mt-4 pt-3 border-t border-border"><p className="text-sm text-text-primary font-semibold">{formatPence(cfg.pricePerPerson)} per person</p><p className="text-xs text-text-secondary mt-1">Minimum reserve: {formatPence(cfg.minReserve)} (covers {cfg.minPlayers} players). Additional players at {formatPence(cfg.pricePerPerson)} each.</p></div>
+        </section>
+      );
+    },
+    "group-type": () => {
+      const showGroupTypes = isFieldEnabled("group-type", "group-types");
+      const showStyles = isFieldEnabled("group-type", "styles");
+      const showDrinkStyles = isFieldEnabled("group-type", "drink-styles");
+      return (
+        <section key="group-type">
+          <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaTheaterMasks className="text-cta" /> Group Type</h2>
+          <div className="space-y-5">
+            {showGroupTypes && (
+              <div id="field-group-type">
+                <label className="block text-sm font-medium text-text-primary mb-2">What type of group is this? *</label>
+                <div className={`grid grid-cols-2 sm:grid-cols-6 gap-2 ${formErrors["group-type"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{activeGroupTypes.map((gt) => (<label key={gt.value} className={`py-2.5 px-3 rounded-lg text-sm font-medium transition border text-center cursor-pointer ${form.groupType === gt.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="groupType" value={gt.value} checked={form.groupType === gt.value} onChange={(e) => { setForm({ ...form, groupType: e.target.value }); clearError("group-type"); }} className="sr-only" required />{gt.label}</label>))}</div>
+                {formErrors["group-type"] && <p className="text-sm text-red-600 mt-1">{formErrors["group-type"]}</p>}
+                {isCorporate && (<div id="field-company" className="mt-3 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-1"><FaBuilding className="inline mr-1 text-text-secondary" />Company / Organisation *</label><input type="text" required value={form.companyName} onChange={(e) => { setForm({ ...form, companyName: e.target.value }); clearError("company"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.company ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Acme Corp" />{formErrors.company ? <p className="text-sm text-red-600 mt-1">{formErrors.company}</p> : !form.companyName && <p className="text-xs text-cta mt-1">Required for corporate bookings</p>}</div>)}
+                {isOther && (<div id="field-other-group-type" className="mt-3 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-1">Please specify *</label><input type="text" required value={form.otherGroupType} onChange={(e) => { setForm({ ...form, otherGroupType: e.target.value }); clearError("other-group-type"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["other-group-type"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="e.g. Reunion, Team social, Leaving do" />{formErrors["other-group-type"] ? <p className="text-sm text-red-600 mt-1">{formErrors["other-group-type"]}</p> : !form.otherGroupType && <p className="text-xs text-cta mt-1">Please tell us what type of group this is</p>}</div>)}
+              </div>
+            )}
+            {showStyles && (
+              <div id="field-style"><label className="block text-sm font-medium text-text-primary mb-2">Style *</label><div className={`grid grid-cols-2 gap-2 ${formErrors.style ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{STYLES.map((s) => (<label key={s.value} className={`py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.style === s.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="style" value={s.value} checked={form.style === s.value} onChange={(e) => { setForm({ ...form, style: e.target.value }); clearError("style"); }} className="sr-only" required />{s.label}</label>))}</div>{formErrors.style && <p className="text-sm text-red-600 mt-1">{formErrors.style}</p>}</div>
+            )}
+            {showDrinkStyles && (
+              <div id="field-drink-style"><label className="block text-sm font-medium text-text-primary mb-2">Would you like the tasks to include the occasional tipple? *</label><div className={`grid grid-cols-2 gap-2 ${formErrors["drink-style"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{DRINK_STYLES.map((ds) => (<label key={ds.value} className={`py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.drinkStyle === ds.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="drinkStyle" value={ds.value} checked={form.drinkStyle === ds.value} onChange={(e) => { setForm({ ...form, drinkStyle: e.target.value }); clearError("drink-style"); }} className="sr-only" required />{ds.label}</label>))}</div>{formErrors["drink-style"] && <p className="text-sm text-red-600 mt-1">{formErrors["drink-style"]}</p>}</div>
+            )}
           </div>
-          <div id="field-first-place-prize"><label className="block text-sm font-medium text-text-primary mb-2">First Place Prize *</label><div className={`grid grid-cols-1 sm:grid-cols-3 gap-2 ${formErrors["first-place-prize"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{FIRST_PLACE_PRIZES.map((fp) => (<label key={fp.value} className={`py-3 px-3 rounded-lg text-sm font-medium transition border text-center cursor-pointer ${form.firstPlacePrize === fp.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="firstPlacePrize" value={fp.value} checked={form.firstPlacePrize === fp.value} onChange={(e) => { setForm({ ...form, firstPlacePrize: e.target.value }); clearError("first-place-prize"); }} className="sr-only" required />{fp.label}</label>))}</div>{formErrors["first-place-prize"] && <p className="text-sm text-red-600 mt-1">{formErrors["first-place-prize"]}</p>}</div>
-        </div>
-      </section>
-    ),
-    "group-type": () => (
-      <section key="group-type">
-        <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaTheaterMasks className="text-cta" /> Group Type</h2>
-        <div className="space-y-5">
-          <div id="field-group-type">
-            <label className="block text-sm font-medium text-text-primary mb-2">What type of group is this? *</label>
-            <div className={`grid grid-cols-2 sm:grid-cols-6 gap-2 ${formErrors["group-type"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{activeGroupTypes.map((gt) => (<label key={gt.value} className={`py-2.5 px-3 rounded-lg text-sm font-medium transition border text-center cursor-pointer ${form.groupType === gt.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="groupType" value={gt.value} checked={form.groupType === gt.value} onChange={(e) => { setForm({ ...form, groupType: e.target.value }); clearError("group-type"); }} className="sr-only" required />{gt.label}</label>))}</div>
-            {formErrors["group-type"] && <p className="text-sm text-red-600 mt-1">{formErrors["group-type"]}</p>}
-            {isCorporate && (<div id="field-company" className="mt-3 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-1"><FaBuilding className="inline mr-1 text-text-secondary" />Company / Organisation *</label><input type="text" required value={form.companyName} onChange={(e) => { setForm({ ...form, companyName: e.target.value }); clearError("company"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.company ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Acme Corp" />{formErrors.company ? <p className="text-sm text-red-600 mt-1">{formErrors.company}</p> : !form.companyName && <p className="text-xs text-cta mt-1">Required for corporate bookings</p>}</div>)}
-            {isOther && (<div id="field-other-group-type" className="mt-3 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-1">Please specify *</label><input type="text" required value={form.otherGroupType} onChange={(e) => { setForm({ ...form, otherGroupType: e.target.value }); clearError("other-group-type"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["other-group-type"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="e.g. Reunion, Team social, Leaving do" />{formErrors["other-group-type"] ? <p className="text-sm text-red-600 mt-1">{formErrors["other-group-type"]}</p> : !form.otherGroupType && <p className="text-xs text-cta mt-1">Please tell us what type of group this is</p>}</div>)}
-          </div>
-          <div id="field-style"><label className="block text-sm font-medium text-text-primary mb-2">Style *</label><div className={`grid grid-cols-2 gap-2 ${formErrors.style ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{STYLES.map((s) => (<label key={s.value} className={`py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.style === s.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="style" value={s.value} checked={form.style === s.value} onChange={(e) => { setForm({ ...form, style: e.target.value }); clearError("style"); }} className="sr-only" required />{s.label}</label>))}</div>{formErrors.style && <p className="text-sm text-red-600 mt-1">{formErrors.style}</p>}</div>
-          <div id="field-drink-style"><label className="block text-sm font-medium text-text-primary mb-2">Would you like the tasks to include the occasional tipple? *</label><div className={`grid grid-cols-2 gap-2 ${formErrors["drink-style"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{DRINK_STYLES.map((ds) => (<label key={ds.value} className={`py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.drinkStyle === ds.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="drinkStyle" value={ds.value} checked={form.drinkStyle === ds.value} onChange={(e) => { setForm({ ...form, drinkStyle: e.target.value }); clearError("drink-style"); }} className="sr-only" required />{ds.label}</label>))}</div>{formErrors["drink-style"] && <p className="text-sm text-red-600 mt-1">{formErrors["drink-style"]}</p>}</div>
-        </div>
-      </section>
-    ),
+        </section>
+      );
+    },
     "task-sections": () => (
       <section key="task-sections" id="field-task-sections">
         <h2 className="text-lg font-bold text-text-primary mb-2 flex items-center gap-2"><FaPuzzlePiece className="text-cta" /> Task Sections *</h2>
@@ -517,15 +590,42 @@ export default function BookingForm({
         {form.timeBlocking === "buffer" && (<div className="mt-4 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-2">Buffer (mins)</label><select value={form.bufferHours} onChange={(e) => setForm({ ...form, bufferHours: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition bg-white"><option value="30">30 mins</option><option value="60">60 mins</option><option value="90">90 mins</option></select></div>)}
       </section>
     ),
-    "add-ons": () => (
-      <section key="add-ons">
-        <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaPlus className="text-cta" /> Add-ons</h2>
-        <div className="space-y-3">
-          <label className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${form.wantsMedals ? "border-cta bg-orange-50" : "border-border bg-white hover:border-cta/50"}`}><input type="checkbox" checked={form.wantsMedals} onChange={(e) => setForm({ ...form, wantsMedals: e.target.checked })} className="sr-only" /><div className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${form.wantsMedals ? "border-cta bg-cta" : "border-border"}`}>{form.wantsMedals && <FaCheck className="text-white text-[10px]" />}</div><div className="flex-1"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><FaMedal className="text-highlight" /><span className="font-semibold text-text-primary">Participation Medals</span></div><span className="font-bold text-cta">+{formatPence(cfg.medalsPricePP)} <span className="text-sm font-normal text-text-secondary">/ person</span></span></div><p className="text-sm text-text-secondary mt-1">A medal for every player to take home</p></div></label>
-          <label className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${form.wantsPhotoPrints ? "border-cta bg-orange-50" : "border-border bg-white hover:border-cta/50"}`}><input type="checkbox" checked={form.wantsPhotoPrints} onChange={(e) => setForm({ ...form, wantsPhotoPrints: e.target.checked })} className="sr-only" /><div className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${form.wantsPhotoPrints ? "border-cta bg-cta" : "border-border"}`}>{form.wantsPhotoPrints && <FaCheck className="text-white text-[10px]" />}</div><div className="flex-1"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><FaCamera className="text-info" /><span className="font-semibold text-text-primary">Printable Experience Photos</span></div><span className="font-bold text-cta">+{formatPence(cfg.photoPrintsPricePP)} <span className="text-sm font-normal text-text-secondary">/ person</span></span></div><p className="text-sm text-text-secondary mt-1">Printed experience photos, similar to theme park on-ride photos</p></div></label>
-        </div>
-      </section>
-    ),
+    "add-ons": () => {
+      const showAddonsList = isFieldEnabled("add-ons", "addons-list");
+      if (!showAddonsList) return null;
+      // Map addon IDs to form state keys
+      const addonFormState: Record<string, { checked: boolean; toggle: (v: boolean) => void }> = {
+        medals: { checked: form.wantsMedals, toggle: (v) => setForm({ ...form, wantsMedals: v }) },
+        "photo-prints": { checked: form.wantsPhotoPrints, toggle: (v) => setForm({ ...form, wantsPhotoPrints: v }) },
+      };
+      const ADDON_ICONS: Record<string, React.ComponentType<{ className?: string }>> = { medals: FaMedal, "photo-prints": FaCamera };
+      const enabledAddOns = (cfg.addOns || []).filter((a) => a.enabled);
+      return (
+        <section key="add-ons">
+          <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaPlus className="text-cta" /> Add-ons</h2>
+          <div className="space-y-3">
+            {enabledAddOns.map((addon) => {
+              const state = addonFormState[addon.id];
+              if (!state) return null;
+              const Icon = ADDON_ICONS[addon.id] || FaPlus;
+              return (
+                <label key={addon.id} className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${state.checked ? "border-cta bg-orange-50" : "border-border bg-white hover:border-cta/50"}`}>
+                  <input type="checkbox" checked={state.checked} onChange={(e) => state.toggle(e.target.checked)} className="sr-only" />
+                  <div className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${state.checked ? "border-cta bg-cta" : "border-border"}`}>{state.checked && <FaCheck className="text-white text-[10px]" />}</div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2"><Icon className="text-highlight" /><span className="font-semibold text-text-primary">{addon.name}</span></div>
+                      <span className="font-bold text-cta">+{formatPence(addon.pricePP)} <span className="text-sm font-normal text-text-secondary">/ person</span></span>
+                    </div>
+                    <p className="text-sm text-text-secondary mt-1">{addon.description}</p>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </section>
+      );
+    },
     "date-time": () => (
       <section key="date-time" id="field-date-time">
         <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaCalendarAlt className="text-cta" /> Choose Date & Time</h2>

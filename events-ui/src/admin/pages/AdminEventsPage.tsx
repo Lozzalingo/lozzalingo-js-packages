@@ -419,6 +419,7 @@ export function AdminEventsPage() {
   const [deleteBookingSectionConfirm, setDeleteBookingSectionConfirm] = useState<string | null>(null);
   const [dragBookingSectionId, setDragBookingSectionId] = useState<string | null>(null);
   const [dragOverBookingSectionId, setDragOverBookingSectionId] = useState<string | null>(null);
+  const [expandedFieldGroup, setExpandedFieldGroup] = useState<string | null>(null);
   // Dynamic pricing fields and travel zones
   type PricingField = { id: string; label: string; value: string; category: "base" | "addon"; perPerson: boolean; mandatory?: boolean; pricingType?: "fixed" | "per-person" };
   type TravelZone = { id: string; label: string; pence: string; canInstantBook: boolean };
@@ -772,6 +773,38 @@ export function AdminEventsPage() {
     delete updated[productSlug];
     setBookingConfig({ ...bookingConfig, productGroupTypes: updated });
     console.log("[AdminEvents] Reset group types to defaults for", productSlug);
+  }
+
+  // Field group helpers
+  function getFieldGroups(sectionId: string): { id: string; label: string; enabled: boolean }[] {
+    const sec = bookingConfig.bookingSections.find((s) => s.id === sectionId);
+    return (sec as any)?.fieldGroups || [];
+  }
+  function updateFieldGroup(sectionId: string, fieldGroupId: string, updates: Partial<{ label: string; enabled: boolean }>) {
+    const sections = bookingConfig.bookingSections.map((s) => {
+      if (s.id !== sectionId) return s;
+      const fgs = ((s as any).fieldGroups || []).map((fg: any) => fg.id === fieldGroupId ? { ...fg, ...updates } : fg);
+      return { ...s, fieldGroups: fgs };
+    });
+    setBookingConfig({ ...bookingConfig, bookingSections: sections });
+  }
+  function removeFieldGroup(sectionId: string, fieldGroupId: string) {
+    const sections = bookingConfig.bookingSections.map((s) => {
+      if (s.id !== sectionId) return s;
+      return { ...s, fieldGroups: ((s as any).fieldGroups || []).filter((fg: any) => fg.id !== fieldGroupId) };
+    });
+    setBookingConfig({ ...bookingConfig, bookingSections: sections });
+    console.log("[AdminEvents] Removed field group", fieldGroupId, "from", sectionId);
+  }
+  function addFieldGroup(sectionId: string, id: string, label: string) {
+    const sections = bookingConfig.bookingSections.map((s) => {
+      if (s.id !== sectionId) return s;
+      const existing = ((s as any).fieldGroups || []);
+      if (existing.some((fg: any) => fg.id === id)) return s;
+      return { ...s, fieldGroups: [...existing, { id, label, enabled: true }] };
+    });
+    setBookingConfig({ ...bookingConfig, bookingSections: sections });
+    console.log("[AdminEvents] Added field group", id, "to", sectionId);
   }
 
   // Value:label list CRUD helpers (works on newline-separated "value:Label" text)
@@ -3334,330 +3367,253 @@ export function AdminEventsPage() {
                                           </div>
                                         </div>
 
-                                        {/* Section-specific fields */}
-                                        {sec.id === "choose-event" && (
-                                          <div className="space-y-4">
-                                            {/* What's Included */}
-                                            <div>
-                                              <label className="text-gray-400 text-xs block mb-1">What&apos;s Included (one per line)</label>
-                                              <textarea
-                                                value={bookingConfig.whatsIncluded}
-                                                onChange={(e) => setBookingConfig({ ...bookingConfig, whatsIncluded: e.target.value })}
-                                                rows={4}
-                                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none resize-none"
-                                                placeholder="One item per line..."
-                                                data-action="admin_booking_section_whats_included"
-                                              />
-                                            </div>
-
-                                            {/* First Place Prizes */}
-                                            <div>
-                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">First Place Prizes</p>
-                                              <div className="space-y-1.5">
-                                                {listParseItems(bookingConfig.firstPlacePrizes).map((item, idx) => (
-                                                  <div key={idx} className="flex items-center gap-2">
-                                                    <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listUpdateItem(bookingConfig.firstPlacePrizes, idx, e.target.value, item.label) })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
-                                                    <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listUpdateItem(bookingConfig.firstPlacePrizes, idx, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
-                                                    <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listRemoveItem(bookingConfig.firstPlacePrizes, idx) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                  </div>
-                                                ))}
-                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listAddItem(bookingConfig.firstPlacePrizes, "new-prize", "New Prize") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add prize</button>
-                                              </div>
-                                            </div>
-
-                                            {/* Base Pricing */}
-                                            <div>
-                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Base Pricing</p>
-                                              <div className="space-y-2">
-                                                {bookingConfig.pricingFields.filter((f) => f.category === "base").map((field) => (
-                                                  <div key={field.id} className="flex items-center gap-2">
-                                                    <input type="text" value={field.label} onChange={(e) => updatePricingField(field.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
-                                                    <input type="number" step="0.01" value={field.value} onChange={(e) => updatePricingField(field.id, { value: e.target.value })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Value" />
-                                                    <button type="button" onClick={() => updatePricingField(field.id, { perPerson: !field.perPerson })} className={`text-[9px] font-semibold px-1.5 py-1 rounded ${field.perPerson ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-700 text-gray-500"}`} title="Per person pricing">/pp</button>
-                                                    <button type="button" onClick={() => updatePricingField(field.id, { mandatory: !field.mandatory })} className={`text-[9px] font-semibold px-1.5 py-1 rounded whitespace-nowrap ${field.mandatory ? "bg-amber-500/20 text-amber-400" : "bg-gray-700 text-gray-500"}`} title="Mandatory fee (always applied, shown as a statement)">fixed</button>
-                                                    <button type="button" onClick={() => removePricingField(field.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                  </div>
-                                                ))}
-                                                <button type="button" onClick={() => addPricingField("base")} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add base field</button>
-                                              </div>
-                                            </div>
-
-                                            {/* Add-on Pricing */}
-                                            <div>
-                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Add-on Pricing</p>
-                                              <div className="space-y-2">
-                                                {bookingConfig.pricingFields.filter((f) => f.category === "addon").map((field) => (
-                                                  <div key={field.id} className="flex items-center gap-2">
-                                                    <input type="text" value={field.label} onChange={(e) => updatePricingField(field.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
-                                                    <input type="number" step="0.01" value={field.value} onChange={(e) => updatePricingField(field.id, { value: e.target.value })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Value" />
-                                                    <button type="button" onClick={() => updatePricingField(field.id, { perPerson: !field.perPerson })} className={`text-[9px] font-semibold px-1.5 py-1 rounded ${field.perPerson ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-700 text-gray-500"}`} title="Per person pricing">/pp</button>
-                                                    <button type="button" onClick={() => updatePricingField(field.id, { mandatory: !field.mandatory })} className={`text-[9px] font-semibold px-1.5 py-1 rounded whitespace-nowrap ${field.mandatory ? "bg-amber-500/20 text-amber-400" : "bg-gray-700 text-gray-500"}`} title="Mandatory fee (always applied, shown as a statement)">fixed</button>
-                                                    <button type="button" onClick={() => removePricingField(field.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                  </div>
-                                                ))}
-                                                <button type="button" onClick={() => addPricingField("addon")} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add add-on field</button>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {sec.id === "group-type" && (
-                                          <div className="space-y-4">
-                                            {/* Group Types */}
-                                            <div>
-                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Group Types</p>
-                                              <div className="space-y-1.5">
-                                                {listParseItems(bookingConfig.groupTypes).map((item, idx) => (
-                                                  <div key={idx} className="flex items-center gap-2">
-                                                    <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, groupTypes: listUpdateItem(bookingConfig.groupTypes, idx, e.target.value, item.label) })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
-                                                    <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, groupTypes: listUpdateItem(bookingConfig.groupTypes, idx, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
-                                                    <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, groupTypes: listRemoveItem(bookingConfig.groupTypes, idx) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                  </div>
-                                                ))}
-                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, groupTypes: listAddItem(bookingConfig.groupTypes, "new-type", "New Type") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add group type</button>
-                                              </div>
-                                            </div>
-
-                                            {/* Styles */}
-                                            <div>
-                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Styles</p>
-                                              <div className="space-y-1.5">
-                                                {listParseItems(bookingConfig.styles).map((item, idx) => (
-                                                  <div key={idx} className="flex items-center gap-2">
-                                                    <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, styles: listUpdateItem(bookingConfig.styles, idx, e.target.value, item.label) })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
-                                                    <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, styles: listUpdateItem(bookingConfig.styles, idx, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
-                                                    <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, styles: listRemoveItem(bookingConfig.styles, idx) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                  </div>
-                                                ))}
-                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, styles: listAddItem(bookingConfig.styles, "new-style", "New Style") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add style</button>
-                                              </div>
-                                            </div>
-
-                                            {/* Drink Styles */}
-                                            <div>
-                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Drink Styles</p>
-                                              <div className="space-y-1.5">
-                                                {listParseItems(bookingConfig.drinkStyles).map((item, idx) => (
-                                                  <div key={idx} className="flex items-center gap-2">
-                                                    <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, drinkStyles: listUpdateItem(bookingConfig.drinkStyles, idx, e.target.value, item.label) })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
-                                                    <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, drinkStyles: listUpdateItem(bookingConfig.drinkStyles, idx, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
-                                                    <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, drinkStyles: listRemoveItem(bookingConfig.drinkStyles, idx) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                  </div>
-                                                ))}
-                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, drinkStyles: listAddItem(bookingConfig.drinkStyles, "new-drink", "New Drink Style") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add drink style</button>
-                                              </div>
-                                            </div>
-
-                                            {/* Per-product Group Types */}
-                                            <div>
-                                              <div className="flex items-center justify-between mb-2">
-                                                <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Per-event Group Types</p>
-                                                {bookingConfig.productGroupTypes[product.slug] !== undefined && (
-                                                  <button type="button" onClick={() => resetProductGroupTypes(product.slug)} className="text-[9px] text-amber-400 hover:text-amber-300 transition">Reset to defaults</button>
-                                                )}
-                                              </div>
-                                              {bookingConfig.productGroupTypes[product.slug] === undefined && (
-                                                <p className="text-[9px] text-gray-600 mb-2">Using global defaults above. Edit below to customise for this event.</p>
-                                              )}
-                                              <div className="space-y-1.5">
-                                                {listParseItems(getProductGroupTypes(product.slug)).map((item, idx) => (
-                                                  <div key={idx} className="flex items-center gap-2">
-                                                    <input type="text" value={item.value} onChange={(e) => setProductGroupTypes(product.slug, listUpdateItem(getProductGroupTypes(product.slug), idx, e.target.value, item.label))} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
-                                                    <input type="text" value={item.label} onChange={(e) => setProductGroupTypes(product.slug, listUpdateItem(getProductGroupTypes(product.slug), idx, item.value, e.target.value))} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
-                                                    <button type="button" onClick={() => setProductGroupTypes(product.slug, listRemoveItem(getProductGroupTypes(product.slug), idx))} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                  </div>
-                                                ))}
-                                                <button type="button" onClick={() => setProductGroupTypes(product.slug, listAddItem(getProductGroupTypes(product.slug), "new-type", "New Type"))} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add group type</button>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {sec.id === "task-sections" && (
-                                          <div className="space-y-4">
-                                            {/* Miscellaneous Themes */}
-                                            <div>
-                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Miscellaneous Themes</p>
-                                              <div className="space-y-1.5">
-                                                {listParseItems(bookingConfig.miscThemes).map((item, idx) => (
-                                                  <div key={idx} className="flex items-center gap-2">
-                                                    <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, miscThemes: listUpdateItem(bookingConfig.miscThemes, idx, e.target.value, item.label) })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
-                                                    <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, miscThemes: listUpdateItem(bookingConfig.miscThemes, idx, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
-                                                    <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, miscThemes: listRemoveItem(bookingConfig.miscThemes, idx) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                  </div>
-                                                ))}
-                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, miscThemes: listAddItem(bookingConfig.miscThemes, "new-theme", "New Theme") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add theme</button>
-                                              </div>
-                                            </div>
-
-                                            {/* Travel Zones */}
-                                            <div>
-                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Travel Zones</p>
-                                              <div className="space-y-2">
-                                                {bookingConfig.travelZones.map((zone) => (
-                                                  <div key={zone.id} className="flex items-center gap-2">
-                                                    <input type="text" value={zone.label} onChange={(e) => updateTravelZone(zone.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Zone name" />
-                                                    <div className="relative w-24">
-                                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">&pound;</span>
-                                                      <input type="number" step="0.01" value={zone.pence} onChange={(e) => updateTravelZone(zone.id, { pence: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-6 pr-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="0.00" />
-                                                    </div>
-                                                    <button type="button" onClick={() => updateTravelZone(zone.id, { canInstantBook: !zone.canInstantBook })} className={`text-[9px] font-semibold px-1.5 py-1 rounded whitespace-nowrap ${zone.canInstantBook ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`} title={zone.canInstantBook ? "Instant booking enabled" : "Enquiry only"}>
-                                                      {zone.canInstantBook ? "instant" : "enquiry"}
+                                        {/* Field Groups */}
+                                        <div>
+                                          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Fields</p>
+                                          <div className="space-y-1">
+                                            {getFieldGroups(sec.id).map((fg) => {
+                                              const fgKey = `${sec.id}::${fg.id}`;
+                                              const isFgExpanded = expandedFieldGroup === fgKey;
+                                              return (
+                                                <div key={fg.id} className={`border rounded-lg transition ${isFgExpanded ? "border-emerald-500/30 bg-gray-800/80" : "border-gray-700/50 bg-gray-800/30"}`}>
+                                                  <div className="flex items-center gap-2 px-2.5 py-1.5">
+                                                    <button type="button" onClick={() => updateFieldGroup(sec.id, fg.id, { enabled: !fg.enabled })} className="text-base">
+                                                      {fg.enabled ? <FaToggleOn className="text-emerald-400" /> : <FaToggleOff className="text-gray-600" />}
                                                     </button>
-                                                    <button type="button" onClick={() => removeTravelZone(zone.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                  </div>
-                                                ))}
-                                                <button type="button" onClick={addTravelZone} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add travel zone</button>
-                                              </div>
-                                            </div>
-
-                                            {/* Task Section Types */}
-                                            <div>
-                                              <div className="flex items-center justify-between mb-2">
-                                                <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Task Section Types</p>
-                                                {bookingConfig.productTaskSectionTypes[product.slug] && (
-                                                  <button type="button" onClick={() => resetTaskSectionTypesToDefault(product.slug)} className="text-[9px] text-amber-400 hover:text-amber-300 transition">Reset to defaults</button>
-                                                )}
-                                              </div>
-                                              {!bookingConfig.productTaskSectionTypes[product.slug] && (
-                                                <p className="text-[9px] text-gray-600 mb-2">Using global defaults. Edit below to customise for this event.</p>
-                                              )}
-                                              <div className="space-y-2">
-                                                {getProductTaskSectionTypes(product.slug).map((sType) => (
-                                                  <div key={sType.id} className="flex items-center gap-2">
-                                                    <input type="text" value={sType.label} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { label: e.target.value })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
-                                                    <input type="text" value={sType.description} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { description: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Description" />
-                                                    <div className="relative w-20">
-                                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">&pound;</span>
-                                                      <input type="number" step="0.01" value={sType.pricePounds} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { pricePounds: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-6 pr-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="0.00" />
-                                                    </div>
-                                                    <button type="button" onClick={() => updateTaskSectionType(product.slug, sType.id, { enabled: !sType.enabled })} className="text-lg">
-                                                      {sType.enabled ? <FaToggleOn className="text-emerald-400" /> : <FaToggleOff className="text-gray-600" />}
+                                                    <input type="text" value={fg.label} onChange={(e) => updateFieldGroup(sec.id, fg.id, { label: e.target.value })} className="flex-1 bg-transparent border-none text-xs text-gray-300 focus:text-white outline-none px-0" />
+                                                    <button type="button" onClick={() => setExpandedFieldGroup(isFgExpanded ? null : fgKey)} className={`${isFgExpanded ? "text-emerald-400" : "text-gray-600 hover:text-gray-400"} transition`}>
+                                                      <FaEdit className="text-[10px]" />
                                                     </button>
-                                                    <button type="button" onClick={() => removeTaskSectionType(product.slug, sType.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                    <button type="button" onClick={() => removeFieldGroup(sec.id, fg.id)} className="text-gray-600 hover:text-red-400 transition">
+                                                      <FaTrash className="text-[10px]" />
+                                                    </button>
                                                   </div>
-                                                ))}
-                                                <button type="button" onClick={() => addTaskSectionType(product.slug)} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add task section type</button>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
 
-                                        {sec.id === "duration" && (
-                                          <div className="space-y-4">
-                                            {/* Duration Mode */}
-                                            <div>
-                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Duration Mode</p>
-                                              <div className="grid grid-cols-2 gap-2">
-                                                {[
-                                                  { value: "auto", label: "Auto", desc: "Linked to task section count" },
-                                                  { value: "manual", label: "Manual", desc: "Customer picks from a list" },
-                                                ].map((mode) => (
-                                                  <button
-                                                    key={mode.value}
-                                                    type="button"
-                                                    onClick={() => setBookingConfig({ ...bookingConfig, durationMode: mode.value as "auto" | "manual" })}
-                                                    className={`p-2 rounded-lg border text-center transition text-xs ${
-                                                      bookingConfig.durationMode === mode.value
-                                                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-400"
-                                                        : "border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-600"
-                                                    }`}
-                                                  >
-                                                    <span className="block font-semibold">{mode.label}</span>
-                                                    <span className="block text-[9px] text-gray-500 mt-0.5">{mode.desc}</span>
-                                                  </button>
-                                                ))}
-                                              </div>
-                                              {bookingConfig.durationMode === "auto" && (
-                                                <p className="text-[9px] text-gray-600 mt-2">Duration is determined by the number of task sections. Task Sections must be enabled for auto mode.</p>
-                                              )}
-                                            </div>
-
-                                            {/* Duration Options */}
-                                            <div>
-                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Duration Options</p>
-                                              <div className="space-y-2">
-                                                {bookingConfig.durations.map((dur, idx) => (
-                                                  <div key={idx} className="flex items-center gap-2">
-                                                    <input type="text" value={dur.value} onChange={(e) => updateDuration(idx, { value: e.target.value })} className="w-16 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="2" title="Value (hours)" />
-                                                    <input type="text" value={dur.label} onChange={(e) => updateDuration(idx, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="2 hours" title="Display label" />
-                                                    <input type="text" value={dur.gameTime} onChange={(e) => updateDuration(idx, { gameTime: e.target.value })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="1 hour" title="Game time" />
-                                                    {bookingConfig.durationMode === "auto" && (
-                                                      <input type="number" min="0" value={dur.minSections} onChange={(e) => updateDuration(idx, { minSections: parseInt(e.target.value) || 0 })} className="w-16 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="0" title="Min sections required" />
-                                                    )}
-                                                    <button type="button" onClick={() => removeDuration(idx)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                  </div>
-                                                ))}
-                                                <div className="flex items-center gap-4">
-                                                  <button type="button" onClick={addDuration} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add duration</button>
-                                                  {bookingConfig.durationMode === "auto" && (
-                                                    <span className="text-[9px] text-gray-600">Last column = min task sections required</span>
+                                                  {/* Field group editor */}
+                                                  {isFgExpanded && (
+                                                    <div className="px-2.5 pb-2.5 pt-1 border-t border-gray-700/50 space-y-2 animate-fade-in">
+                                                      {/* whats-included */}
+                                                      {fg.id === "whats-included" && (
+                                                        <textarea value={bookingConfig.whatsIncluded} onChange={(e) => setBookingConfig({ ...bookingConfig, whatsIncluded: e.target.value })} rows={4} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:border-emerald-500 outline-none resize-none" placeholder="One item per line..." />
+                                                      )}
+                                                      {/* first-place-prizes */}
+                                                      {fg.id === "first-place-prizes" && (
+                                                        <div className="space-y-1.5">
+                                                          {listParseItems(bookingConfig.firstPlacePrizes).map((item, i) => (
+                                                            <div key={i} className="flex items-center gap-2">
+                                                              <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listUpdateItem(bookingConfig.firstPlacePrizes, i, e.target.value, item.label) })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
+                                                              <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listUpdateItem(bookingConfig.firstPlacePrizes, i, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                              <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listRemoveItem(bookingConfig.firstPlacePrizes, i) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listAddItem(bookingConfig.firstPlacePrizes, "new-prize", "New Prize") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add prize</button>
+                                                        </div>
+                                                      )}
+                                                      {/* base-pricing */}
+                                                      {fg.id === "base-pricing" && (
+                                                        <div className="space-y-1.5">
+                                                          {bookingConfig.pricingFields.filter((f) => f.category === "base").map((field) => (
+                                                            <div key={field.id} className="flex items-center gap-2">
+                                                              <input type="text" value={field.label} onChange={(e) => updatePricingField(field.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <input type="number" step="0.01" value={field.value} onChange={(e) => updatePricingField(field.id, { value: e.target.value })} className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <button type="button" onClick={() => updatePricingField(field.id, { perPerson: !field.perPerson })} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${field.perPerson ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-700 text-gray-500"}`}>/pp</button>
+                                                              <button type="button" onClick={() => updatePricingField(field.id, { mandatory: !field.mandatory })} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${field.mandatory ? "bg-amber-500/20 text-amber-400" : "bg-gray-700 text-gray-500"}`}>fixed</button>
+                                                              <button type="button" onClick={() => removePricingField(field.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={() => addPricingField("base")} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add field</button>
+                                                        </div>
+                                                      )}
+                                                      {/* addon-pricing */}
+                                                      {fg.id === "addon-pricing" && (
+                                                        <div className="space-y-1.5">
+                                                          {bookingConfig.pricingFields.filter((f) => f.category === "addon").map((field) => (
+                                                            <div key={field.id} className="flex items-center gap-2">
+                                                              <input type="text" value={field.label} onChange={(e) => updatePricingField(field.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <input type="number" step="0.01" value={field.value} onChange={(e) => updatePricingField(field.id, { value: e.target.value })} className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <button type="button" onClick={() => updatePricingField(field.id, { perPerson: !field.perPerson })} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${field.perPerson ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-700 text-gray-500"}`}>/pp</button>
+                                                              <button type="button" onClick={() => updatePricingField(field.id, { mandatory: !field.mandatory })} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${field.mandatory ? "bg-amber-500/20 text-amber-400" : "bg-gray-700 text-gray-500"}`}>fixed</button>
+                                                              <button type="button" onClick={() => removePricingField(field.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={() => addPricingField("addon")} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add field</button>
+                                                        </div>
+                                                      )}
+                                                      {/* group-types */}
+                                                      {fg.id === "group-types" && (
+                                                        <div className="space-y-1.5">
+                                                          {listParseItems(bookingConfig.groupTypes).map((item, i) => (
+                                                            <div key={i} className="flex items-center gap-2">
+                                                              <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, groupTypes: listUpdateItem(bookingConfig.groupTypes, i, e.target.value, item.label) })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" />
+                                                              <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, groupTypes: listUpdateItem(bookingConfig.groupTypes, i, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, groupTypes: listRemoveItem(bookingConfig.groupTypes, i) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, groupTypes: listAddItem(bookingConfig.groupTypes, "new-type", "New Type") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add</button>
+                                                        </div>
+                                                      )}
+                                                      {/* styles */}
+                                                      {fg.id === "styles" && (
+                                                        <div className="space-y-1.5">
+                                                          {listParseItems(bookingConfig.styles).map((item, i) => (
+                                                            <div key={i} className="flex items-center gap-2">
+                                                              <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, styles: listUpdateItem(bookingConfig.styles, i, e.target.value, item.label) })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" />
+                                                              <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, styles: listUpdateItem(bookingConfig.styles, i, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, styles: listRemoveItem(bookingConfig.styles, i) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, styles: listAddItem(bookingConfig.styles, "new-style", "New Style") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add</button>
+                                                        </div>
+                                                      )}
+                                                      {/* drink-styles */}
+                                                      {fg.id === "drink-styles" && (
+                                                        <div className="space-y-1.5">
+                                                          {listParseItems(bookingConfig.drinkStyles).map((item, i) => (
+                                                            <div key={i} className="flex items-center gap-2">
+                                                              <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, drinkStyles: listUpdateItem(bookingConfig.drinkStyles, i, e.target.value, item.label) })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" />
+                                                              <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, drinkStyles: listUpdateItem(bookingConfig.drinkStyles, i, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, drinkStyles: listRemoveItem(bookingConfig.drinkStyles, i) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, drinkStyles: listAddItem(bookingConfig.drinkStyles, "new-drink", "New Drink Style") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add</button>
+                                                        </div>
+                                                      )}
+                                                      {/* per-product-group-types */}
+                                                      {fg.id === "per-product-group-types" && (
+                                                        <div className="space-y-1.5">
+                                                          {bookingConfig.productGroupTypes[product.slug] !== undefined && (
+                                                            <button type="button" onClick={() => resetProductGroupTypes(product.slug)} className="text-[9px] text-amber-400 hover:text-amber-300 transition mb-1">Reset to defaults</button>
+                                                          )}
+                                                          {bookingConfig.productGroupTypes[product.slug] === undefined && (
+                                                            <p className="text-[9px] text-gray-600 mb-1">Using global defaults. Edit below to customise for this event.</p>
+                                                          )}
+                                                          {listParseItems(getProductGroupTypes(product.slug)).map((item, i) => (
+                                                            <div key={i} className="flex items-center gap-2">
+                                                              <input type="text" value={item.value} onChange={(e) => setProductGroupTypes(product.slug, listUpdateItem(getProductGroupTypes(product.slug), i, e.target.value, item.label))} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" />
+                                                              <input type="text" value={item.label} onChange={(e) => setProductGroupTypes(product.slug, listUpdateItem(getProductGroupTypes(product.slug), i, item.value, e.target.value))} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <button type="button" onClick={() => setProductGroupTypes(product.slug, listRemoveItem(getProductGroupTypes(product.slug), i))} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={() => setProductGroupTypes(product.slug, listAddItem(getProductGroupTypes(product.slug), "new-type", "New Type"))} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add</button>
+                                                        </div>
+                                                      )}
+                                                      {/* misc-themes */}
+                                                      {fg.id === "misc-themes" && (
+                                                        <div className="space-y-1.5">
+                                                          {listParseItems(bookingConfig.miscThemes).map((item, i) => (
+                                                            <div key={i} className="flex items-center gap-2">
+                                                              <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, miscThemes: listUpdateItem(bookingConfig.miscThemes, i, e.target.value, item.label) })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" />
+                                                              <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, miscThemes: listUpdateItem(bookingConfig.miscThemes, i, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, miscThemes: listRemoveItem(bookingConfig.miscThemes, i) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, miscThemes: listAddItem(bookingConfig.miscThemes, "new-theme", "New Theme") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add</button>
+                                                        </div>
+                                                      )}
+                                                      {/* travel-zones */}
+                                                      {fg.id === "travel-zones" && (
+                                                        <div className="space-y-1.5">
+                                                          {bookingConfig.travelZones.map((zone) => (
+                                                            <div key={zone.id} className="flex items-center gap-2">
+                                                              <input type="text" value={zone.label} onChange={(e) => updateTravelZone(zone.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <div className="relative w-20"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">&pound;</span><input type="number" step="0.01" value={zone.pence} onChange={(e) => updateTravelZone(zone.id, { pence: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-5 pr-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" /></div>
+                                                              <button type="button" onClick={() => updateTravelZone(zone.id, { canInstantBook: !zone.canInstantBook })} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${zone.canInstantBook ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}>{zone.canInstantBook ? "instant" : "enquiry"}</button>
+                                                              <button type="button" onClick={() => removeTravelZone(zone.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={addTravelZone} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add zone</button>
+                                                        </div>
+                                                      )}
+                                                      {/* task-section-types */}
+                                                      {fg.id === "task-section-types" && (
+                                                        <div className="space-y-1.5">
+                                                          {bookingConfig.productTaskSectionTypes[product.slug] && (
+                                                            <button type="button" onClick={() => resetTaskSectionTypesToDefault(product.slug)} className="text-[9px] text-amber-400 hover:text-amber-300 transition mb-1">Reset to defaults</button>
+                                                          )}
+                                                          {!bookingConfig.productTaskSectionTypes[product.slug] && (
+                                                            <p className="text-[9px] text-gray-600 mb-1">Using global defaults. Edit below to customise for this event.</p>
+                                                          )}
+                                                          {getProductTaskSectionTypes(product.slug).map((sType) => (
+                                                            <div key={sType.id} className="flex items-center gap-2">
+                                                              <input type="text" value={sType.label} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { label: e.target.value })} className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <input type="text" value={sType.description} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { description: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                              <div className="relative w-16"><span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">&pound;</span><input type="number" step="0.01" value={sType.pricePounds} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { pricePounds: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-5 pr-1 py-1 text-xs text-white focus:border-emerald-500 outline-none" /></div>
+                                                              <button type="button" onClick={() => updateTaskSectionType(product.slug, sType.id, { enabled: !sType.enabled })} className="text-base">{sType.enabled ? <FaToggleOn className="text-emerald-400" /> : <FaToggleOff className="text-gray-600" />}</button>
+                                                              <button type="button" onClick={() => removeTaskSectionType(product.slug, sType.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={() => addTaskSectionType(product.slug)} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add type</button>
+                                                        </div>
+                                                      )}
+                                                      {/* duration-mode */}
+                                                      {fg.id === "duration-mode" && (
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                          {[{ value: "auto", label: "Auto", desc: "Linked to task section count" }, { value: "manual", label: "Manual", desc: "Customer picks from a list" }].map((mode) => (
+                                                            <button key={mode.value} type="button" onClick={() => setBookingConfig({ ...bookingConfig, durationMode: mode.value as "auto" | "manual" })} className={`p-2 rounded-lg border text-center transition text-xs ${bookingConfig.durationMode === mode.value ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-600"}`}>
+                                                              <span className="block font-semibold">{mode.label}</span><span className="block text-[9px] text-gray-500 mt-0.5">{mode.desc}</span>
+                                                            </button>
+                                                          ))}
+                                                        </div>
+                                                      )}
+                                                      {/* duration-options */}
+                                                      {fg.id === "duration-options" && (
+                                                        <div className="space-y-1.5">
+                                                          {bookingConfig.durations.map((dur, i) => (
+                                                            <div key={i} className="flex items-center gap-2">
+                                                              <input type="text" value={dur.value} onChange={(e) => updateDuration(i, { value: e.target.value })} className="w-12 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" title="Value (hours)" />
+                                                              <input type="text" value={dur.label} onChange={(e) => updateDuration(i, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" title="Display label" />
+                                                              <input type="text" value={dur.gameTime} onChange={(e) => updateDuration(i, { gameTime: e.target.value })} className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" title="Game time" />
+                                                              {bookingConfig.durationMode === "auto" && (<input type="number" min="0" value={dur.minSections} onChange={(e) => updateDuration(i, { minSections: parseInt(e.target.value) || 0 })} className="w-12 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" title="Min sections" />)}
+                                                              <button type="button" onClick={() => removeDuration(i)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={addDuration} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add duration</button>
+                                                        </div>
+                                                      )}
+                                                      {/* time-blocking-mode */}
+                                                      {fg.id === "time-blocking-mode" && (
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                          {[{ value: "none", label: "None", desc: "Event time only" }, { value: "buffer", label: "Buffer", desc: "Block time either side" }, { value: "whole-day", label: "Whole Day", desc: "Block the entire day" }].map((mode) => (
+                                                            <button key={mode.value} type="button" onClick={() => setBookingConfig({ ...bookingConfig, timeBlockingMode: mode.value })} className={`p-2 rounded-lg border text-center transition text-xs ${bookingConfig.timeBlockingMode === mode.value ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-600"}`}>
+                                                              <span className="block font-semibold">{mode.label}</span><span className="block text-[9px] text-gray-500 mt-0.5">{mode.desc}</span>
+                                                            </button>
+                                                          ))}
+                                                        </div>
+                                                      )}
+                                                      {/* addons-list */}
+                                                      {fg.id === "addons-list" && (
+                                                        <div className="space-y-2">
+                                                          {bookingConfig.addOns.map((addon) => (
+                                                            <div key={addon.id} className="bg-gray-900 border border-gray-700 rounded-lg p-2 space-y-1.5">
+                                                              <div className="flex items-center gap-2">
+                                                                <input type="text" value={addon.name} onChange={(e) => updateAddOn(addon.id, { name: e.target.value })} className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Name" />
+                                                                <input type="number" step="0.01" value={(addon.pricePP / 100).toFixed(2)} onChange={(e) => updateAddOn(addon.id, { pricePP: Math.round(parseFloat(e.target.value || "0") * 100) })} className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                                <button type="button" onClick={() => updateAddOn(addon.id, { enabled: !addon.enabled })} className="text-base">{addon.enabled ? <FaToggleOn className="text-emerald-400" /> : <FaToggleOff className="text-gray-600" />}</button>
+                                                                <button type="button" onClick={() => removeAddOn(addon.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                              </div>
+                                                              <input type="text" value={addon.description} onChange={(e) => updateAddOn(addon.id, { description: e.target.value })} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Description" />
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={addNewAddOn} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add add-on</button>
+                                                        </div>
+                                                      )}
+                                                      {/* message-text */}
+                                                      {fg.id === "message-text" && (
+                                                        <div>
+                                                          <label className="text-gray-500 text-[10px] block mb-1">Placeholder Text</label>
+                                                          <input type="text" value={bookingConfig.messagePlaceholder} onChange={(e) => setBookingConfig({ ...bookingConfig, messagePlaceholder: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                        </div>
+                                                      )}
+                                                    </div>
                                                   )}
                                                 </div>
-                                              </div>
-                                            </div>
+                                              );
+                                            })}
                                           </div>
-                                        )}
-
-                                        {sec.id === "time-blocking" && (
-                                          <div>
-                                            <label className="text-gray-400 text-xs block mb-1">Default Time Blocking Mode</label>
-                                            <div className="grid grid-cols-3 gap-2">
-                                              {[
-                                                { value: "none", label: "None", desc: "Event time only" },
-                                                { value: "buffer", label: "Buffer", desc: "Block time either side" },
-                                                { value: "whole-day", label: "Whole Day", desc: "Block the entire day" },
-                                              ].map((mode) => (
-                                                <button
-                                                  key={mode.value}
-                                                  type="button"
-                                                  onClick={() => setBookingConfig({ ...bookingConfig, timeBlockingMode: mode.value })}
-                                                  className={`p-2 rounded-lg border text-center transition text-xs ${
-                                                    bookingConfig.timeBlockingMode === mode.value
-                                                      ? "border-emerald-500 bg-emerald-500/10 text-emerald-400"
-                                                      : "border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-600"
-                                                  }`}
-                                                  data-action={`admin_booking_section_time_blocking_${mode.value}`}
-                                                >
-                                                  <span className="block font-semibold">{mode.label}</span>
-                                                  <span className="block text-[9px] text-gray-500 mt-0.5">{mode.desc}</span>
-                                                </button>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {sec.id === "add-ons" && (
-                                          <div className="space-y-3">
-                                            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Manage Add-ons</p>
-                                            {bookingConfig.addOns.map((addon) => (
-                                              <div key={addon.id} className="bg-gray-900 border border-gray-700 rounded-lg p-3 space-y-2">
-                                                <div className="flex items-center gap-2">
-                                                  <input type="text" value={addon.name} onChange={(e) => updateAddOn(addon.id, { name: e.target.value })} className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Add-on name" data-action={`admin_addon_name_${addon.id}`} />
-                                                  <input type="number" step="0.01" value={(addon.pricePP / 100).toFixed(2)} onChange={(e) => updateAddOn(addon.id, { pricePP: Math.round(parseFloat(e.target.value || "0") * 100) })} className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Price/pp" data-action={`admin_addon_price_${addon.id}`} />
-                                                  <button type="button" onClick={() => updateAddOn(addon.id, { enabled: !addon.enabled })} className="text-lg" data-action={`admin_addon_toggle_${addon.id}`}>
-                                                    {addon.enabled ? <FaToggleOn className="text-emerald-400" /> : <FaToggleOff className="text-gray-600" />}
-                                                  </button>
-                                                  <button type="button" onClick={() => removeAddOn(addon.id)} className="text-gray-500 hover:text-red-400 transition text-xs" data-action={`admin_addon_remove_${addon.id}`}>
-                                                    <FaTrash />
-                                                  </button>
-                                                </div>
-                                                <input type="text" value={addon.description} onChange={(e) => updateAddOn(addon.id, { description: e.target.value })} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Description" data-action={`admin_addon_desc_${addon.id}`} />
-                                              </div>
-                                            ))}
-                                            <button type="button" onClick={addNewAddOn} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition" data-action="admin_addon_add_new">
-                                              <FaPlus className="text-[10px]" />
-                                              Add New Add-on
-                                            </button>
-                                          </div>
-                                        )}
-
-                                        {sec.id === "message" && (
-                                          <div>
-                                            <label className="text-gray-400 text-xs block mb-1">Placeholder Text</label>
-                                            <input type="text" value={bookingConfig.messagePlaceholder} onChange={(e) => setBookingConfig({ ...bookingConfig, messagePlaceholder: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none" data-action="admin_booking_section_message_placeholder" />
-                                          </div>
-                                        )}
+                                          <button type="button" onClick={() => { const id = `field-${Date.now()}`; addFieldGroup(sec.id, id, "New Field"); }} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition mt-2">
+                                            <FaPlus className="text-[8px]" /> Add field group
+                                          </button>
+                                        </div>
                                       </div>
                                     )}
                                   </div>

@@ -1,5 +1,11 @@
 // ─── Shared Booking Form Types ──────────────────────────────────────────────
 
+export type SectionFieldGroup = {
+  id: string;
+  label: string;
+  enabled: boolean;
+};
+
 export type BookingFormSection = {
   id: string;
   title: string;
@@ -8,6 +14,7 @@ export type BookingFormSection = {
   order: number;
   description?: string;
   fields?: Record<string, unknown>;
+  fieldGroups?: SectionFieldGroup[];
 };
 
 export type BookingAddOn = {
