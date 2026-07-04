@@ -37,6 +37,7 @@ export type BookingConfig = {
   photoPrintsPricePP: number;
   travelCharges: Record<string, { label: string; pence: number; canInstantBook: boolean }>;
   durations: { value: string; label: string; gameTime: string; total: string; minSections: number }[];
+  durationMode?: "auto" | "manual";
   groupTypes: { value: string; label: string }[];
   styles: { value: string; label: string }[];
   drinkStyles: { value: string; label: string }[];
@@ -49,6 +50,8 @@ export type BookingConfig = {
   productTaskSectionTypes?: Record<string, TaskSectionTypeConfig[]>;
   productGroupTypes?: Record<string, { value: string; label: string }[]>;
   messagePlaceholder?: string;
+  /** Dynamic pricing fields for admin configuration */
+  pricingFields?: { id: string; label: string; value: string; category: "base" | "addon"; perPerson: boolean; mandatory?: boolean; pricingType?: "fixed" | "per-person" }[];
 };
 
 export type TaskSectionType = "location" | "miscellaneous" | "bespoke";

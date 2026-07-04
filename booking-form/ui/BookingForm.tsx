@@ -177,13 +177,15 @@ export default function BookingForm({
     return events;
   }, [calendarEvents, blockedCalendarEvents, form.slotStartTime, form.slotEndTime, form.eventDate, form.eventTime, selectedProduct?.name]);
 
+  const durationMode = cfg.durationMode || "auto";
+
   // ─── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (form.duration) {
+    if (durationMode === "auto" && form.duration) {
       const dur = DURATIONS.find((d) => d.value === form.duration);
       if (dur && sectionCount < dur.minSections) setForm((prev) => ({ ...prev, duration: "" }));
     }
-  }, [sectionCount, form.duration, DURATIONS]);
+  }, [sectionCount, form.duration, DURATIONS, durationMode]);
 
   // Remove task sections not available for the current product
   useEffect(() => {
@@ -478,11 +480,15 @@ export default function BookingForm({
     "duration": () => (
       <section key="duration" id="field-duration">
         <h2 className="text-lg font-bold text-text-primary mb-2 flex items-center gap-2"><FaClock className="text-cta" /> Duration *</h2>
-        <p className="text-sm text-text-secondary mb-4">{sectionCount === 0 ? "Defaults to 2 hours. Add task sections above to unlock longer durations." : `You have ${sectionCount} task section${sectionCount > 1 ? "s" : ""} - ${sectionCount === 1 ? "1 hour" : sectionCount === 2 ? "up to 1.5 hours" : "up to 2 hours"} of game time available.`}</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-5">
+        {durationMode === "auto" ? (
+          <p className="text-sm text-text-secondary mb-4">{sectionCount === 0 ? "Defaults to 2 hours. Add task sections above to unlock longer durations." : `You have ${sectionCount} task section${sectionCount > 1 ? "s" : ""} - ${sectionCount === 1 ? "1 hour" : sectionCount === 2 ? "up to 1.5 hours" : "up to 2 hours"} of game time available.`}</p>
+        ) : (
+          <p className="text-sm text-text-secondary mb-4">Choose how long you&apos;d like your event to be.</p>
+        )}
+        <div className={`grid grid-cols-1 gap-2 mb-5 ${DURATIONS.length <= 3 ? "sm:grid-cols-3" : DURATIONS.length <= 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
           {DURATIONS.map((d) => {
             const isSelected = form.duration === d.value;
-            const isLocked = sectionCount < d.minSections;
+            const isLocked = durationMode === "auto" && sectionCount < d.minSections;
             return (<div key={d.value} className="relative group"><label className={`block p-4 rounded-xl border-2 text-center transition-all ${isLocked ? "opacity-40 cursor-not-allowed border-gray-200 bg-gray-50" : isSelected ? "border-cta bg-orange-50 cursor-pointer" : "border-border bg-white hover:border-cta/50 cursor-pointer"}`}><input type="radio" name="duration" value={d.value} checked={isSelected} onChange={(e) => { if (!isLocked) { setForm({ ...form, duration: e.target.value }); clearError("duration"); } }} className="sr-only" disabled={isLocked} /><span className="block text-xl font-bold text-text-primary">{d.total}</span><span className="block text-xs text-text-secondary mt-1">{d.gameTime} game time</span></label>{isLocked && (<div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none"><span className="hidden group-hover:block text-[10px] text-cta bg-white border border-cta/20 rounded px-2 py-0.5 shadow-sm whitespace-nowrap">Add more task sections to unlock</span></div>)}</div>);
           })}
         </div>
@@ -582,6 +588,11 @@ export default function BookingForm({
               {selectedProduct && <div className="flex justify-between text-text-secondary"><span>{selectedProduct.name}</span></div>}
               <div className="flex justify-between text-text-secondary"><span>{groupSizeNum} {groupSizeNum === 1 ? "player" : "players"} x {formatPence(cfg.pricePerPerson)}</span><span>{formatPence(groupSizeNum * cfg.pricePerPerson)}</span></div>
               {groupSizeNum * cfg.pricePerPerson < cfg.minReserve && <div className="flex justify-between text-text-secondary text-xs italic"><span>Minimum reserve ({cfg.minPlayers} players)</span><span>{formatPence(cfg.minReserve)}</span></div>}
+              {cfg.pricingFields?.filter((f) => f.mandatory).map((f) => {
+                const pence = Math.round(parseFloat(f.value || "0") * 100);
+                const amount = f.perPerson ? pence * groupSizeNum : pence;
+                return pence > 0 ? (<div key={f.id} className="flex justify-between text-text-secondary"><span>{f.label}{f.perPerson ? ` (${groupSizeNum} x ${formatPence(pence)})` : ""}</span><span>+{formatPence(amount)}</span></div>) : null;
+              })}
               {taskSections.map((s, i) => {
                 if (s.type === "miscellaneous" && s.miscTheme === "bespoke") return <div key={`ts-${i}`} className="flex justify-between text-text-secondary"><span>Bespoke theme</span><span>+{formatPence(cfg.miscBespokePrice)}</span></div>;
                 const sectionPricePence = getTaskSectionPricePence(s.type, activeTaskSectionTypes, cfg.bespokeSectonPrice);

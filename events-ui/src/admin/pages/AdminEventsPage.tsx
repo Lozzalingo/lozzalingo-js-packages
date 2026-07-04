@@ -420,7 +420,7 @@ export function AdminEventsPage() {
   const [dragBookingSectionId, setDragBookingSectionId] = useState<string | null>(null);
   const [dragOverBookingSectionId, setDragOverBookingSectionId] = useState<string | null>(null);
   // Dynamic pricing fields and travel zones
-  type PricingField = { id: string; label: string; value: string; category: "base" | "addon"; perPerson: boolean };
+  type PricingField = { id: string; label: string; value: string; category: "base" | "addon"; perPerson: boolean; mandatory?: boolean; pricingType?: "fixed" | "per-person" };
   type TravelZone = { id: string; label: string; pence: string; canInstantBook: boolean };
   type TaskSectionTypeConfig = { id: string; label: string; description: string; enabled: boolean; pricePounds: string };
 
@@ -464,6 +464,8 @@ export function AdminEventsPage() {
     bookingSections: [...DEFAULT_BOOKING_CONFIG.bookingSections],
     addOns: [...DEFAULT_BOOKING_CONFIG.addOns],
     messagePlaceholder: "Anything else we should know?",
+    durationMode: "auto" as "auto" | "manual",
+    durations: [...DEFAULT_BOOKING_CONFIG.durations],
   });
   const [savingBookingConfig, setSavingBookingConfig] = useState(false);
 
@@ -541,6 +543,8 @@ export function AdminEventsPage() {
               bookingSections: cfg.bookingSections || [...DEFAULT_BOOKING_CONFIG.bookingSections],
               addOns: cfg.addOns || [...DEFAULT_BOOKING_CONFIG.addOns],
               messagePlaceholder: cfg.messagePlaceholder || "Anything else we should know?",
+              durationMode: cfg.durationMode || "auto",
+              durations: cfg.durations || [...DEFAULT_BOOKING_CONFIG.durations],
             });
             console.log("[AdminEvents] Loaded booking config from settings");
           } catch (err) {
@@ -770,6 +774,43 @@ export function AdminEventsPage() {
     console.log("[AdminEvents] Reset group types to defaults for", productSlug);
   }
 
+  // Value:label list CRUD helpers (works on newline-separated "value:Label" text)
+  function listAddItem(text: string, defaultValue = "new-item", defaultLabel = "New Item"): string {
+    return text ? text + `\n${defaultValue}:${defaultLabel}` : `${defaultValue}:${defaultLabel}`;
+  }
+  function listRemoveItem(text: string, idx: number): string {
+    return text.split("\n").filter(Boolean).filter((_, i) => i !== idx).join("\n");
+  }
+  function listUpdateItem(text: string, idx: number, value: string, label: string): string {
+    const lines = text.split("\n").filter(Boolean);
+    lines[idx] = `${value}:${label}`;
+    return lines.join("\n");
+  }
+  function listParseItems(text: string): { value: string; label: string }[] {
+    return text.split("\n").filter(Boolean).map((line) => {
+      const colonIdx = line.indexOf(":");
+      if (colonIdx === -1) return { value: line.toLowerCase().replace(/\s+/g, "-"), label: line };
+      return { value: line.slice(0, colonIdx).trim(), label: line.slice(colonIdx + 1).trim() };
+    });
+  }
+
+  // Duration helpers
+  function addDuration() {
+    setBookingConfig({
+      ...bookingConfig,
+      durations: [...bookingConfig.durations, { value: "1", label: "1 hour", gameTime: "30 minutes", total: "1 hour", minSections: 0 }],
+    });
+    console.log("[AdminEvents] Added duration option");
+  }
+  function updateDuration(idx: number, updates: Partial<typeof bookingConfig.durations[0]>) {
+    const durations = bookingConfig.durations.map((d, i) => i === idx ? { ...d, ...updates } : d);
+    setBookingConfig({ ...bookingConfig, durations });
+  }
+  function removeDuration(idx: number) {
+    setBookingConfig({ ...bookingConfig, durations: bookingConfig.durations.filter((_, i) => i !== idx) });
+    console.log("[AdminEvents] Removed duration option at index", idx);
+  }
+
   async function saveBookingConfig() {
     setSavingBookingConfig(true);
     try {
@@ -820,6 +861,8 @@ export function AdminEventsPage() {
         productGroupTypes: Object.fromEntries(
           Object.entries(bookingConfig.productGroupTypes).map(([slug, text]) => [slug, textToValueLabel(text)])
         ),
+        durationMode: bookingConfig.durationMode,
+        durations: bookingConfig.durations,
       };
 
       console.log("[AdminEvents] Saving booking config:", cfg);
@@ -3293,7 +3336,8 @@ export function AdminEventsPage() {
 
                                         {/* Section-specific fields */}
                                         {sec.id === "choose-event" && (
-                                          <div className="space-y-3">
+                                          <div className="space-y-4">
+                                            {/* What's Included */}
                                             <div>
                                               <label className="text-gray-400 text-xs block mb-1">What&apos;s Included (one per line)</label>
                                               <textarea
@@ -3305,69 +3349,253 @@ export function AdminEventsPage() {
                                                 data-action="admin_booking_section_whats_included"
                                               />
                                             </div>
+
+                                            {/* First Place Prizes */}
                                             <div>
-                                              <label className="text-gray-400 text-xs block mb-1">First Place Prizes (value:Label, one per line)</label>
-                                              <textarea
-                                                value={bookingConfig.firstPlacePrizes}
-                                                onChange={(e) => setBookingConfig({ ...bookingConfig, firstPlacePrizes: e.target.value })}
-                                                rows={3}
-                                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none resize-none font-mono"
-                                                placeholder="prosecco:Prosecco"
-                                                data-action="admin_booking_section_prizes"
-                                              />
+                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">First Place Prizes</p>
+                                              <div className="space-y-1.5">
+                                                {listParseItems(bookingConfig.firstPlacePrizes).map((item, idx) => (
+                                                  <div key={idx} className="flex items-center gap-2">
+                                                    <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listUpdateItem(bookingConfig.firstPlacePrizes, idx, e.target.value, item.label) })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
+                                                    <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listUpdateItem(bookingConfig.firstPlacePrizes, idx, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                    <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listRemoveItem(bookingConfig.firstPlacePrizes, idx) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, firstPlacePrizes: listAddItem(bookingConfig.firstPlacePrizes, "new-prize", "New Prize") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add prize</button>
+                                              </div>
+                                            </div>
+
+                                            {/* Base Pricing */}
+                                            <div>
+                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Base Pricing</p>
+                                              <div className="space-y-2">
+                                                {bookingConfig.pricingFields.filter((f) => f.category === "base").map((field) => (
+                                                  <div key={field.id} className="flex items-center gap-2">
+                                                    <input type="text" value={field.label} onChange={(e) => updatePricingField(field.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                    <input type="number" step="0.01" value={field.value} onChange={(e) => updatePricingField(field.id, { value: e.target.value })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Value" />
+                                                    <button type="button" onClick={() => updatePricingField(field.id, { perPerson: !field.perPerson })} className={`text-[9px] font-semibold px-1.5 py-1 rounded ${field.perPerson ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-700 text-gray-500"}`} title="Per person pricing">/pp</button>
+                                                    <button type="button" onClick={() => updatePricingField(field.id, { mandatory: !field.mandatory })} className={`text-[9px] font-semibold px-1.5 py-1 rounded whitespace-nowrap ${field.mandatory ? "bg-amber-500/20 text-amber-400" : "bg-gray-700 text-gray-500"}`} title="Mandatory fee (always applied, shown as a statement)">fixed</button>
+                                                    <button type="button" onClick={() => removePricingField(field.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <button type="button" onClick={() => addPricingField("base")} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add base field</button>
+                                              </div>
+                                            </div>
+
+                                            {/* Add-on Pricing */}
+                                            <div>
+                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Add-on Pricing</p>
+                                              <div className="space-y-2">
+                                                {bookingConfig.pricingFields.filter((f) => f.category === "addon").map((field) => (
+                                                  <div key={field.id} className="flex items-center gap-2">
+                                                    <input type="text" value={field.label} onChange={(e) => updatePricingField(field.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                    <input type="number" step="0.01" value={field.value} onChange={(e) => updatePricingField(field.id, { value: e.target.value })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Value" />
+                                                    <button type="button" onClick={() => updatePricingField(field.id, { perPerson: !field.perPerson })} className={`text-[9px] font-semibold px-1.5 py-1 rounded ${field.perPerson ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-700 text-gray-500"}`} title="Per person pricing">/pp</button>
+                                                    <button type="button" onClick={() => updatePricingField(field.id, { mandatory: !field.mandatory })} className={`text-[9px] font-semibold px-1.5 py-1 rounded whitespace-nowrap ${field.mandatory ? "bg-amber-500/20 text-amber-400" : "bg-gray-700 text-gray-500"}`} title="Mandatory fee (always applied, shown as a statement)">fixed</button>
+                                                    <button type="button" onClick={() => removePricingField(field.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <button type="button" onClick={() => addPricingField("addon")} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add add-on field</button>
+                                              </div>
                                             </div>
                                           </div>
                                         )}
 
                                         {sec.id === "group-type" && (
-                                          <div className="space-y-3">
+                                          <div className="space-y-4">
+                                            {/* Group Types */}
                                             <div>
-                                              <label className="text-gray-400 text-xs block mb-1">Group Types (value:Label, one per line)</label>
-                                              <textarea
-                                                value={bookingConfig.groupTypes}
-                                                onChange={(e) => setBookingConfig({ ...bookingConfig, groupTypes: e.target.value })}
-                                                rows={4}
-                                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none resize-none font-mono"
-                                                placeholder="corporate:Corporate"
-                                                data-action="admin_booking_section_group_types"
-                                              />
+                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Group Types</p>
+                                              <div className="space-y-1.5">
+                                                {listParseItems(bookingConfig.groupTypes).map((item, idx) => (
+                                                  <div key={idx} className="flex items-center gap-2">
+                                                    <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, groupTypes: listUpdateItem(bookingConfig.groupTypes, idx, e.target.value, item.label) })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
+                                                    <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, groupTypes: listUpdateItem(bookingConfig.groupTypes, idx, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                    <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, groupTypes: listRemoveItem(bookingConfig.groupTypes, idx) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, groupTypes: listAddItem(bookingConfig.groupTypes, "new-type", "New Type") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add group type</button>
+                                              </div>
                                             </div>
+
+                                            {/* Styles */}
                                             <div>
-                                              <label className="text-gray-400 text-xs block mb-1">Styles (value:Label, one per line)</label>
-                                              <textarea
-                                                value={bookingConfig.styles}
-                                                onChange={(e) => setBookingConfig({ ...bookingConfig, styles: e.target.value })}
-                                                rows={2}
-                                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none resize-none font-mono"
-                                                placeholder="professional:Professional"
-                                                data-action="admin_booking_section_styles"
-                                              />
+                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Styles</p>
+                                              <div className="space-y-1.5">
+                                                {listParseItems(bookingConfig.styles).map((item, idx) => (
+                                                  <div key={idx} className="flex items-center gap-2">
+                                                    <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, styles: listUpdateItem(bookingConfig.styles, idx, e.target.value, item.label) })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
+                                                    <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, styles: listUpdateItem(bookingConfig.styles, idx, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                    <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, styles: listRemoveItem(bookingConfig.styles, idx) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, styles: listAddItem(bookingConfig.styles, "new-style", "New Style") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add style</button>
+                                              </div>
                                             </div>
+
+                                            {/* Drink Styles */}
                                             <div>
-                                              <label className="text-gray-400 text-xs block mb-1">Drink Styles (value:Label, one per line)</label>
-                                              <textarea
-                                                value={bookingConfig.drinkStyles}
-                                                onChange={(e) => setBookingConfig({ ...bookingConfig, drinkStyles: e.target.value })}
-                                                rows={2}
-                                                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none resize-none font-mono"
-                                                placeholder="sober:Sober"
-                                                data-action="admin_booking_section_drink_styles"
-                                              />
+                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Drink Styles</p>
+                                              <div className="space-y-1.5">
+                                                {listParseItems(bookingConfig.drinkStyles).map((item, idx) => (
+                                                  <div key={idx} className="flex items-center gap-2">
+                                                    <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, drinkStyles: listUpdateItem(bookingConfig.drinkStyles, idx, e.target.value, item.label) })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
+                                                    <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, drinkStyles: listUpdateItem(bookingConfig.drinkStyles, idx, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                    <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, drinkStyles: listRemoveItem(bookingConfig.drinkStyles, idx) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, drinkStyles: listAddItem(bookingConfig.drinkStyles, "new-drink", "New Drink Style") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add drink style</button>
+                                              </div>
+                                            </div>
+
+                                            {/* Per-product Group Types */}
+                                            <div>
+                                              <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Per-event Group Types</p>
+                                                {bookingConfig.productGroupTypes[product.slug] !== undefined && (
+                                                  <button type="button" onClick={() => resetProductGroupTypes(product.slug)} className="text-[9px] text-amber-400 hover:text-amber-300 transition">Reset to defaults</button>
+                                                )}
+                                              </div>
+                                              {bookingConfig.productGroupTypes[product.slug] === undefined && (
+                                                <p className="text-[9px] text-gray-600 mb-2">Using global defaults above. Edit below to customise for this event.</p>
+                                              )}
+                                              <div className="space-y-1.5">
+                                                {listParseItems(getProductGroupTypes(product.slug)).map((item, idx) => (
+                                                  <div key={idx} className="flex items-center gap-2">
+                                                    <input type="text" value={item.value} onChange={(e) => setProductGroupTypes(product.slug, listUpdateItem(getProductGroupTypes(product.slug), idx, e.target.value, item.label))} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
+                                                    <input type="text" value={item.label} onChange={(e) => setProductGroupTypes(product.slug, listUpdateItem(getProductGroupTypes(product.slug), idx, item.value, e.target.value))} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                    <button type="button" onClick={() => setProductGroupTypes(product.slug, listRemoveItem(getProductGroupTypes(product.slug), idx))} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <button type="button" onClick={() => setProductGroupTypes(product.slug, listAddItem(getProductGroupTypes(product.slug), "new-type", "New Type"))} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add group type</button>
+                                              </div>
                                             </div>
                                           </div>
                                         )}
 
                                         {sec.id === "task-sections" && (
-                                          <div>
-                                            <label className="text-gray-400 text-xs block mb-1">Miscellaneous Themes (value:Label, one per line)</label>
-                                            <textarea
-                                              value={bookingConfig.miscThemes}
-                                              onChange={(e) => setBookingConfig({ ...bookingConfig, miscThemes: e.target.value })}
-                                              rows={5}
-                                              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none resize-none font-mono"
-                                              placeholder="halloween:Halloween"
-                                              data-action="admin_booking_section_misc_themes"
-                                            />
+                                          <div className="space-y-4">
+                                            {/* Miscellaneous Themes */}
+                                            <div>
+                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Miscellaneous Themes</p>
+                                              <div className="space-y-1.5">
+                                                {listParseItems(bookingConfig.miscThemes).map((item, idx) => (
+                                                  <div key={idx} className="flex items-center gap-2">
+                                                    <input type="text" value={item.value} onChange={(e) => setBookingConfig({ ...bookingConfig, miscThemes: listUpdateItem(bookingConfig.miscThemes, idx, e.target.value, item.label) })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
+                                                    <input type="text" value={item.label} onChange={(e) => setBookingConfig({ ...bookingConfig, miscThemes: listUpdateItem(bookingConfig.miscThemes, idx, item.value, e.target.value) })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                    <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, miscThemes: listRemoveItem(bookingConfig.miscThemes, idx) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, miscThemes: listAddItem(bookingConfig.miscThemes, "new-theme", "New Theme") })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add theme</button>
+                                              </div>
+                                            </div>
+
+                                            {/* Travel Zones */}
+                                            <div>
+                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Travel Zones</p>
+                                              <div className="space-y-2">
+                                                {bookingConfig.travelZones.map((zone) => (
+                                                  <div key={zone.id} className="flex items-center gap-2">
+                                                    <input type="text" value={zone.label} onChange={(e) => updateTravelZone(zone.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Zone name" />
+                                                    <div className="relative w-24">
+                                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">&pound;</span>
+                                                      <input type="number" step="0.01" value={zone.pence} onChange={(e) => updateTravelZone(zone.id, { pence: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-6 pr-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="0.00" />
+                                                    </div>
+                                                    <button type="button" onClick={() => updateTravelZone(zone.id, { canInstantBook: !zone.canInstantBook })} className={`text-[9px] font-semibold px-1.5 py-1 rounded whitespace-nowrap ${zone.canInstantBook ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`} title={zone.canInstantBook ? "Instant booking enabled" : "Enquiry only"}>
+                                                      {zone.canInstantBook ? "instant" : "enquiry"}
+                                                    </button>
+                                                    <button type="button" onClick={() => removeTravelZone(zone.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <button type="button" onClick={addTravelZone} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add travel zone</button>
+                                              </div>
+                                            </div>
+
+                                            {/* Task Section Types */}
+                                            <div>
+                                              <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Task Section Types</p>
+                                                {bookingConfig.productTaskSectionTypes[product.slug] && (
+                                                  <button type="button" onClick={() => resetTaskSectionTypesToDefault(product.slug)} className="text-[9px] text-amber-400 hover:text-amber-300 transition">Reset to defaults</button>
+                                                )}
+                                              </div>
+                                              {!bookingConfig.productTaskSectionTypes[product.slug] && (
+                                                <p className="text-[9px] text-gray-600 mb-2">Using global defaults. Edit below to customise for this event.</p>
+                                              )}
+                                              <div className="space-y-2">
+                                                {getProductTaskSectionTypes(product.slug).map((sType) => (
+                                                  <div key={sType.id} className="flex items-center gap-2">
+                                                    <input type="text" value={sType.label} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { label: e.target.value })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                    <input type="text" value={sType.description} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { description: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Description" />
+                                                    <div className="relative w-20">
+                                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">&pound;</span>
+                                                      <input type="number" step="0.01" value={sType.pricePounds} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { pricePounds: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-6 pr-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="0.00" />
+                                                    </div>
+                                                    <button type="button" onClick={() => updateTaskSectionType(product.slug, sType.id, { enabled: !sType.enabled })} className="text-lg">
+                                                      {sType.enabled ? <FaToggleOn className="text-emerald-400" /> : <FaToggleOff className="text-gray-600" />}
+                                                    </button>
+                                                    <button type="button" onClick={() => removeTaskSectionType(product.slug, sType.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <button type="button" onClick={() => addTaskSectionType(product.slug)} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add task section type</button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {sec.id === "duration" && (
+                                          <div className="space-y-4">
+                                            {/* Duration Mode */}
+                                            <div>
+                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Duration Mode</p>
+                                              <div className="grid grid-cols-2 gap-2">
+                                                {[
+                                                  { value: "auto", label: "Auto", desc: "Linked to task section count" },
+                                                  { value: "manual", label: "Manual", desc: "Customer picks from a list" },
+                                                ].map((mode) => (
+                                                  <button
+                                                    key={mode.value}
+                                                    type="button"
+                                                    onClick={() => setBookingConfig({ ...bookingConfig, durationMode: mode.value as "auto" | "manual" })}
+                                                    className={`p-2 rounded-lg border text-center transition text-xs ${
+                                                      bookingConfig.durationMode === mode.value
+                                                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-400"
+                                                        : "border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-600"
+                                                    }`}
+                                                  >
+                                                    <span className="block font-semibold">{mode.label}</span>
+                                                    <span className="block text-[9px] text-gray-500 mt-0.5">{mode.desc}</span>
+                                                  </button>
+                                                ))}
+                                              </div>
+                                              {bookingConfig.durationMode === "auto" && (
+                                                <p className="text-[9px] text-gray-600 mt-2">Duration is determined by the number of task sections. Task Sections must be enabled for auto mode.</p>
+                                              )}
+                                            </div>
+
+                                            {/* Duration Options */}
+                                            <div>
+                                              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Duration Options</p>
+                                              <div className="space-y-2">
+                                                {bookingConfig.durations.map((dur, idx) => (
+                                                  <div key={idx} className="flex items-center gap-2">
+                                                    <input type="text" value={dur.value} onChange={(e) => updateDuration(idx, { value: e.target.value })} className="w-16 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="2" title="Value (hours)" />
+                                                    <input type="text" value={dur.label} onChange={(e) => updateDuration(idx, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="2 hours" title="Display label" />
+                                                    <input type="text" value={dur.gameTime} onChange={(e) => updateDuration(idx, { gameTime: e.target.value })} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="1 hour" title="Game time" />
+                                                    {bookingConfig.durationMode === "auto" && (
+                                                      <input type="number" min="0" value={dur.minSections} onChange={(e) => updateDuration(idx, { minSections: parseInt(e.target.value) || 0 })} className="w-16 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="0" title="Min sections required" />
+                                                    )}
+                                                    <button type="button" onClick={() => removeDuration(idx)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                  </div>
+                                                ))}
+                                                <div className="flex items-center gap-4">
+                                                  <button type="button" onClick={addDuration} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add duration</button>
+                                                  {bookingConfig.durationMode === "auto" && (
+                                                    <span className="text-[9px] text-gray-600">Last column = min task sections required</span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
                                           </div>
                                         )}
 
@@ -3442,136 +3670,6 @@ export function AdminEventsPage() {
                             <p className="text-gray-500 text-xs">No booking sections configured. Add some using the buttons above, or reset to defaults.</p>
                           </div>
                         )}
-
-                        {/* Pricing Fields */}
-                        <div className="bg-gray-800/50 border border-emerald-500/30 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-sm font-semibold text-emerald-400">Pricing Fields</h4>
-                          </div>
-
-                          {/* Base pricing */}
-                          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Base Pricing</p>
-                          <div className="space-y-2 mb-4">
-                            {bookingConfig.pricingFields.filter((f) => f.category === "base").map((field) => (
-                              <div key={field.id} className="flex items-center gap-2">
-                                <input type="text" value={field.label} onChange={(e) => updatePricingField(field.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" data-action={`admin_pricing_label_${field.id}`} />
-                                <input type="number" step="0.01" value={field.value} onChange={(e) => updatePricingField(field.id, { value: e.target.value })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Value" data-action={`admin_pricing_value_${field.id}`} />
-                                <button type="button" onClick={() => updatePricingField(field.id, { perPerson: !field.perPerson })} className={`text-[9px] font-semibold px-1.5 py-1 rounded ${field.perPerson ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-700 text-gray-500"}`} title="Per person pricing" data-action={`admin_pricing_pp_${field.id}`}>
-                                  /pp
-                                </button>
-                                <button type="button" onClick={() => removePricingField(field.id)} className="text-gray-500 hover:text-red-400 transition text-xs" data-action={`admin_pricing_remove_${field.id}`}>
-                                  <FaTrash />
-                                </button>
-                              </div>
-                            ))}
-                            <button type="button" onClick={() => addPricingField("base")} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition" data-action="admin_pricing_add_base">
-                              <FaPlus className="text-[8px]" />
-                              Add base field
-                            </button>
-                          </div>
-
-                          {/* Add-on pricing */}
-                          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Add-on Pricing</p>
-                          <div className="space-y-2 mb-4">
-                            {bookingConfig.pricingFields.filter((f) => f.category === "addon").map((field) => (
-                              <div key={field.id} className="flex items-center gap-2">
-                                <input type="text" value={field.label} onChange={(e) => updatePricingField(field.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" data-action={`admin_pricing_label_${field.id}`} />
-                                <input type="number" step="0.01" value={field.value} onChange={(e) => updatePricingField(field.id, { value: e.target.value })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Value" data-action={`admin_pricing_value_${field.id}`} />
-                                <button type="button" onClick={() => updatePricingField(field.id, { perPerson: !field.perPerson })} className={`text-[9px] font-semibold px-1.5 py-1 rounded ${field.perPerson ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-700 text-gray-500"}`} title="Per person pricing" data-action={`admin_pricing_pp_${field.id}`}>
-                                  /pp
-                                </button>
-                                <button type="button" onClick={() => removePricingField(field.id)} className="text-gray-500 hover:text-red-400 transition text-xs" data-action={`admin_pricing_remove_${field.id}`}>
-                                  <FaTrash />
-                                </button>
-                              </div>
-                            ))}
-                            <button type="button" onClick={() => addPricingField("addon")} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition" data-action="admin_pricing_add_addon">
-                              <FaPlus className="text-[8px]" />
-                              Add add-on field
-                            </button>
-                          </div>
-
-                          {/* Travel zones */}
-                          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Travel Zones</p>
-                          <div className="space-y-2">
-                            {bookingConfig.travelZones.map((zone) => (
-                              <div key={zone.id} className="flex items-center gap-2">
-                                <input type="text" value={zone.label} onChange={(e) => updateTravelZone(zone.id, { label: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Zone name" data-action={`admin_travel_label_${zone.id}`} />
-                                <div className="relative w-28">
-                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">&pound;</span>
-                                  <input type="number" step="0.01" value={zone.pence} onChange={(e) => updateTravelZone(zone.id, { pence: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-6 pr-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="0.00" data-action={`admin_travel_pence_${zone.id}`} />
-                                </div>
-                                <button type="button" onClick={() => updateTravelZone(zone.id, { canInstantBook: !zone.canInstantBook })} className={`text-[9px] font-semibold px-1.5 py-1 rounded whitespace-nowrap ${zone.canInstantBook ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`} title={zone.canInstantBook ? "Instant booking enabled" : "Enquiry only"} data-action={`admin_travel_instant_${zone.id}`}>
-                                  {zone.canInstantBook ? "instant" : "enquiry"}
-                                </button>
-                                <button type="button" onClick={() => removeTravelZone(zone.id)} className="text-gray-500 hover:text-red-400 transition text-xs" data-action={`admin_travel_remove_${zone.id}`}>
-                                  <FaTrash />
-                                </button>
-                              </div>
-                            ))}
-                            <button type="button" onClick={addTravelZone} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition" data-action="admin_travel_add_zone">
-                              <FaPlus className="text-[8px]" />
-                              Add travel zone
-                            </button>
-                          </div>
-
-                          {/* Task Section Types (per product) */}
-                          <div className="flex items-center justify-between mt-4 mb-2">
-                            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Task Section Types</p>
-                            {bookingConfig.productTaskSectionTypes[product.slug] && (
-                              <button type="button" onClick={() => resetTaskSectionTypesToDefault(product.slug)} className="text-[9px] text-amber-400 hover:text-amber-300 transition" data-action={`admin_task_type_reset_${product.slug}`}>
-                                Reset to defaults
-                              </button>
-                            )}
-                          </div>
-                          {!bookingConfig.productTaskSectionTypes[product.slug] && (
-                            <p className="text-[9px] text-gray-600 mb-2">Using global defaults. Edit below to customise for this event.</p>
-                          )}
-                          <div className="space-y-2">
-                            {getProductTaskSectionTypes(product.slug).map((sType) => (
-                              <div key={sType.id} className="flex items-center gap-2">
-                                <input type="text" value={sType.label} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { label: e.target.value })} className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" data-action={`admin_task_type_label_${sType.id}`} />
-                                <input type="text" value={sType.description} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { description: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Description" data-action={`admin_task_type_desc_${sType.id}`} />
-                                <div className="relative w-24">
-                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">&pound;</span>
-                                  <input type="number" step="0.01" value={sType.pricePounds} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { pricePounds: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-6 pr-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none" placeholder="0.00" data-action={`admin_task_type_price_${sType.id}`} />
-                                </div>
-                                <button type="button" onClick={() => updateTaskSectionType(product.slug, sType.id, { enabled: !sType.enabled })} className="text-lg" data-action={`admin_task_type_toggle_${sType.id}`}>
-                                  {sType.enabled ? <FaToggleOn className="text-emerald-400" /> : <FaToggleOff className="text-gray-600" />}
-                                </button>
-                                <button type="button" onClick={() => removeTaskSectionType(product.slug, sType.id)} className="text-gray-500 hover:text-red-400 transition text-xs" data-action={`admin_task_type_remove_${sType.id}`}>
-                                  <FaTrash />
-                                </button>
-                              </div>
-                            ))}
-                            <button type="button" onClick={() => addTaskSectionType(product.slug)} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition" data-action={`admin_task_type_add_${product.slug}`}>
-                              <FaPlus className="text-[8px]" />
-                              Add task section type
-                            </button>
-                          </div>
-
-                          {/* Group Types (per product) */}
-                          <div className="flex items-center justify-between mt-4 mb-2">
-                            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Group Types</p>
-                            {bookingConfig.productGroupTypes[product.slug] !== undefined && (
-                              <button type="button" onClick={() => resetProductGroupTypes(product.slug)} className="text-[9px] text-amber-400 hover:text-amber-300 transition" data-action={`admin_group_types_reset_${product.slug}`}>
-                                Reset to defaults
-                              </button>
-                            )}
-                          </div>
-                          {bookingConfig.productGroupTypes[product.slug] === undefined && (
-                            <p className="text-[9px] text-gray-600 mb-2">Using global defaults. Edit below to customise for this event.</p>
-                          )}
-                          <textarea
-                            value={getProductGroupTypes(product.slug)}
-                            onChange={(e) => setProductGroupTypes(product.slug, e.target.value)}
-                            rows={4}
-                            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none resize-none font-mono"
-                            placeholder="corporate:Corporate&#10;hen:Hen&#10;birthday:Birthday"
-                            data-action={`admin_group_types_${product.slug}`}
-                          />
-                          <p className="text-[9px] text-gray-600 mt-1">One per line, format: value:Label</p>
-                        </div>
 
                         {/* Save/Cancel */}
                         <div className="flex items-center gap-3 mt-4">
