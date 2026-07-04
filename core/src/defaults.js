@@ -68,7 +68,7 @@ const DEFAULT_CONFIG = {
     external_api: "/api/external",
     external_api_admin: "/api/admin/api-keys",
     dashboard: "/api/dashboard",
-    analytics: "/api/analytics",
+    analytics: "/api/visitors",
     merchandise: "/api/merchandise",
     orders: "/api/orders",
     marketplace_sync: "/api/marketplace-sync",

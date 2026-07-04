@@ -295,7 +295,7 @@ function createVisitorController(prisma, options = {}) {
 
       const {
         sessionId, sessionPageCount, isNewVisitor = true,
-        deviceType, deviceBrand, deviceConfidence, browser, browserVersion, os, osVersion,
+        deviceType, deviceBrand, browser, browserVersion, os, osVersion,
         screenWidth, screenHeight, viewportWidth, viewportHeight, pixelRatio, colorDepth,
         touchPoints, orientation, hardwareCores, deviceMemory, connectionType,
         fingerprint, canvasHash, webglHash,
@@ -318,7 +318,7 @@ function createVisitorController(prisma, options = {}) {
           city: geo.city, country: geo.country, region: geo.region,
           latitude: geo.latitude, longitude: geo.longitude,
           sessionId, sessionPageCount, isNewVisitor,
-          userAgent, deviceType, deviceBrand, deviceConfidence,
+          userAgent, deviceType, deviceBrand,
           browser, browserVersion, os, osVersion,
           screenWidth, screenHeight, viewportWidth, viewportHeight,
           pixelRatio, colorDepth, touchPoints, orientation,
@@ -379,8 +379,9 @@ function createVisitorController(prisma, options = {}) {
         return res.status(400).json({ error: "Visitor ID required" });
       }
 
+      const id = typeof visitorId === 'string' ? parseInt(visitorId, 10) : visitorId;
       await prisma.visitor.update({
-        where: { id: visitorId },
+        where: { id },
         data: {
           timeOnPage,
           pageLoadTime,

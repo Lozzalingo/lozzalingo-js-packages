@@ -529,10 +529,24 @@ class Lozzalingo {
   _registerAnalytics() {
     if (!this.isEnabled("analytics")) return;
     this._tryRegister("analytics", () => {
-      // Analytics has both client and server components
-      const analyticsPath = this.config.routes.analytics || "/api/analytics";
+      const { createVisitorRoutes } = require("@lozzalingo/analytics/server");
+      const analyticsPath = this.config.routes.analytics || "/api/visitors";
+
+      this.app.use(
+        analyticsPath,
+        createVisitorRoutes(this.prisma, {
+          siteDomain: this.config.site.baseUrl
+            ? this.config.site.baseUrl.replace(/^https?:\/\//, "")
+            : "localhost",
+          features: {
+            ecommerce: this.isEnabled("merchandise") || this.isEnabled("orders"),
+          },
+        })
+      );
+
+      // Store reference so Socket.IO can emit newVisitorAdded events
+      this.app.set("analyticsPath", analyticsPath);
       console.log("[Core] Analytics registered at", analyticsPath);
-      // Site-specific analytics setup can be done via lz.app
     });
   }
 

@@ -1549,6 +1549,12 @@ export function AdminEventsPage() {
     }
   }
 
+  function moveSectionUpDown(productId: string, sections: ProductSection[], sectionIdx: number, direction: "up" | "down") {
+    const targetIdx = direction === "up" ? sectionIdx - 1 : sectionIdx + 1;
+    if (targetIdx < 0 || targetIdx >= sections.length) return;
+    dropSection(productId, sections, sections[sectionIdx].id, sections[targetIdx].id);
+  }
+
   async function toggleSectionCollapsible(productId: string, section: ProductSection) {
     const newVal = !section.isCollapsible;
     // Optimistic update
@@ -2635,6 +2641,24 @@ export function AdminEventsPage() {
                                         })()}
                                       </div>
                                       <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() => moveSectionUpDown(product.id, product.sections, idx, "up")}
+                                          disabled={idx === 0}
+                                          className="text-gray-500 hover:text-white disabled:opacity-20 transition"
+                                          title="Move up"
+                                          data-action={`admin_section_move_up_${section.id}`}
+                                        >
+                                          <FaArrowUp className="text-xs" />
+                                        </button>
+                                        <button
+                                          onClick={() => moveSectionUpDown(product.id, product.sections, idx, "down")}
+                                          disabled={idx === product.sections.length - 1}
+                                          className="text-gray-500 hover:text-white disabled:opacity-20 transition"
+                                          title="Move down"
+                                          data-action={`admin_section_move_down_${section.id}`}
+                                        >
+                                          <FaArrowDown className="text-xs" />
+                                        </button>
                                         <button
                                           onClick={() => toggleSectionCollapsible(product.id, section)}
                                           className={`${section.isCollapsible ? "text-gray-500 hover:text-amber-400" : "text-amber-400"} transition`}
