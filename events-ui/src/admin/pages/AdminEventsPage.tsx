@@ -354,7 +354,7 @@ function CoverImageField({
 }
 
 export function AdminEventsPage() {
-  const { apiBase, cdnBase, storageFolder, adminSecret, brand } = useEventsConfig();
+  const { apiBase, cdnBase, storageFolder, adminSecret, brand, socket } = useEventsConfig();
 
   // Configure shared storage client for image uploads
   useEffect(() => {
@@ -469,6 +469,9 @@ export function AdminEventsPage() {
     durations: [...DEFAULT_BOOKING_CONFIG.durations],
   });
   const [savingBookingConfig, setSavingBookingConfig] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const bookingConfigLoaded = useRef(false);
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Helper to convert value:label arrays to textarea strings
   function valueLabelToText(arr: { value: string; label: string }[]): string {
@@ -552,11 +555,117 @@ export function AdminEventsPage() {
             console.error("[AdminEvents] Failed to parse booking config:", err);
           }
         }
+        // Mark as loaded so auto-save can begin
+        setTimeout(() => { bookingConfigLoaded.current = true; }, 500);
       })
       .catch((err) => {
         console.error("[AdminEvents] Failed to fetch booking config:", err);
+        // Still mark as loaded so new configs can be saved
+        setTimeout(() => { bookingConfigLoaded.current = true; }, 500);
       });
   }, []);
+
+  // Debounced auto-save: whenever bookingConfig changes (after initial load), save via socket or HTTP
+  useEffect(() => {
+    if (!bookingConfigLoaded.current) return;
+
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+
+    autoSaveTimer.current = setTimeout(() => {
+      // Build the save payload (same transform as saveBookingConfig)
+      const pf = (id: string): number => {
+        const field = bookingConfig.pricingFields.find((f) => f.id === id);
+        if (!field) return 0;
+        if (id === "min-players") return parseInt(field.value) || 0;
+        return Math.round(parseFloat(field.value || "0") * 100);
+      };
+
+      const travelCharges: Record<string, { label: string; pence: number; canInstantBook: boolean }> = {};
+      for (const zone of bookingConfig.travelZones) {
+        travelCharges[zone.id] = {
+          label: zone.label,
+          pence: Math.round(parseFloat(zone.pence || "0") * 100),
+          canInstantBook: zone.canInstantBook,
+        };
+      }
+
+      const cfg = {
+        pricingFields: bookingConfig.pricingFields,
+        travelZones: bookingConfig.travelZones,
+        pricePerPerson: pf("price-per-person"),
+        minPlayers: pf("min-players"),
+        minReserve: pf("min-reserve"),
+        bespokeSectonPrice: pf("personalised-section"),
+        miscBespokePrice: pf("bespoke-misc-theme"),
+        medalsPricePP: pf("medals"),
+        photoPrintsPricePP: pf("photo-prints"),
+        travelCharges,
+        whatsIncluded: bookingConfig.whatsIncluded.split("\n").map((s: string) => s.trim()).filter(Boolean),
+        timeBlockingMode: bookingConfig.timeBlockingMode || "buffer",
+        groupTypes: textToValueLabel(bookingConfig.groupTypes),
+        styles: textToValueLabel(bookingConfig.styles),
+        drinkStyles: textToValueLabel(bookingConfig.drinkStyles),
+        firstPlacePrizes: textToValueLabel(bookingConfig.firstPlacePrizes),
+        miscThemes: textToValueLabel(bookingConfig.miscThemes),
+        bookingSections: bookingConfig.bookingSections,
+        addOns: bookingConfig.addOns,
+        messagePlaceholder: bookingConfig.messagePlaceholder,
+        taskSectionTypes: bookingConfig.taskSectionTypes,
+        productTaskSectionTypes: bookingConfig.productTaskSectionTypes,
+        productGroupTypes: Object.fromEntries(
+          Object.entries(bookingConfig.productGroupTypes).map(([slug, text]) => [slug, textToValueLabel(text)])
+        ),
+        durationMode: bookingConfig.durationMode,
+        durations: bookingConfig.durations,
+      };
+
+      setAutoSaveStatus("saving");
+      console.log("[AdminEvents] Auto-saving booking config");
+
+      if (socket && socket.connected) {
+        socket.emit("settings:save", {
+          key: "booking_config",
+          value: JSON.stringify(cfg),
+          category: "booking",
+          description: "Booking form configuration (pricing, sections, add-ons, travel charges)",
+        });
+        // Listen for confirmation (one-time)
+        socket.once("settings:saved", (res: { key: string; success: boolean }) => {
+          if (res.key === "booking_config") {
+            setAutoSaveStatus(res.success ? "saved" : "idle");
+            if (res.success) {
+              console.log("[AdminEvents] Booking config auto-saved via socket");
+              setTimeout(() => setAutoSaveStatus("idle"), 2000);
+            } else {
+              console.error("[AdminEvents] Socket auto-save failed");
+            }
+          }
+        });
+      } else {
+        // Fallback to HTTP
+        fetch(`${apiBase}/api/app-settings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-admin-key": authHeader },
+          body: JSON.stringify({ key: "booking_config", value: JSON.stringify(cfg), category: "booking", description: "Booking form configuration (pricing, sections, add-ons, travel charges)" }),
+        }).then((res) => {
+          setAutoSaveStatus(res.ok ? "saved" : "idle");
+          if (res.ok) {
+            console.log("[AdminEvents] Booking config auto-saved via HTTP");
+            setTimeout(() => setAutoSaveStatus("idle"), 2000);
+          } else {
+            console.error("[AdminEvents] HTTP auto-save failed:", res.status);
+          }
+        }).catch((err) => {
+          console.error("[AdminEvents] Auto-save error:", err);
+          setAutoSaveStatus("idle");
+        });
+      }
+    }, 1500);
+
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, [bookingConfig]);
 
   // Booking sections helpers
   function moveBookingSection(index: number, direction: "up" | "down") {
@@ -3627,13 +3736,14 @@ export function AdminEventsPage() {
                           </div>
                         )}
 
-                        {/* Save/Cancel */}
+                        {/* Auto-save status / Close */}
                         <div className="flex items-center gap-3 mt-4">
-                          <button onClick={saveBookingConfig} disabled={savingBookingConfig} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-4 py-1.5 rounded-lg text-xs font-medium transition" data-action="admin_booking_sections_save">
-                            <FaSave className="text-[10px]" />
-                            {savingBookingConfig ? "Saving..." : "Save Booking Config"}
-                          </button>
-                          <button onClick={() => { setShowBookingSections(false); setExpandedBookingSection(null); setNewBookingSectionForm(null); setDeleteBookingSectionConfirm(null); }} className="text-gray-400 hover:text-white text-xs transition" data-action="admin_booking_sections_cancel">Cancel</button>
+                          <span className="flex items-center gap-2 text-xs">
+                            {autoSaveStatus === "saving" && <><span className="loading loading-spinner loading-xs text-emerald-400"></span><span className="text-gray-400">Saving...</span></>}
+                            {autoSaveStatus === "saved" && <><FaCheck className="text-emerald-400 text-[10px]" /><span className="text-emerald-400">Saved</span></>}
+                            {autoSaveStatus === "idle" && <span className="text-gray-500">Auto-saves on change</span>}
+                          </span>
+                          <button onClick={() => { setShowBookingSections(false); setExpandedBookingSection(null); setNewBookingSectionForm(null); setDeleteBookingSectionConfirm(null); }} className="text-gray-400 hover:text-white text-xs transition" data-action="admin_booking_sections_close">Close</button>
                         </div>
                       </div>
                     )}

@@ -50,6 +50,8 @@ export type EventsConfig = {
   adminSecret?: string;
   /** Brand configuration */
   brand: EventsBrand;
+  /** Optional socket.io instance for real-time auto-save */
+  socket?: any;
 };
 
 const defaultBrand: EventsBrand = {
@@ -95,6 +97,7 @@ export function EventsProvider({
   storageFolder,
   adminSecret,
   brand,
+  socket,
   children,
 }: {
   apiBase: string;
@@ -102,10 +105,11 @@ export function EventsProvider({
   storageFolder: string;
   adminSecret?: string;
   brand?: Partial<EventsBrand>;
+  socket?: any;
   children: React.ReactNode;
 }) {
   const mergedBrand: EventsBrand = { ...defaultBrand, ...brand };
-  const config: EventsConfig = { apiBase, cdnBase, storageFolder, adminSecret, brand: mergedBrand };
+  const config: EventsConfig = { apiBase, cdnBase, storageFolder, adminSecret, brand: mergedBrand, socket };
 
   return (
     <EventsContext.Provider value={config}>
