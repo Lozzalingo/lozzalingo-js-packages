@@ -550,34 +550,62 @@ export default function BookingForm({
         {formErrors["task-sections"] ? <p className="text-sm text-red-600 mt-2 flex items-center gap-1"><FaInfoCircle /> {formErrors["task-sections"]}</p> : taskSections.length === 0 && <p className="text-xs text-cta mt-2 flex items-center gap-1"><FaInfoCircle /> Add at least one task section to continue.</p>}
       </section>
     ),
-    "duration": () => (
-      <section key="duration" id="field-duration">
-        <h2 className="text-lg font-bold text-text-primary mb-2 flex items-center gap-2"><FaClock className="text-cta" /> Duration *</h2>
-        {durationMode === "auto" ? (
-          <p className="text-sm text-text-secondary mb-4">{sectionCount === 0 ? "Defaults to 2 hours. Add task sections above to unlock longer durations." : `You have ${sectionCount} task section${sectionCount > 1 ? "s" : ""} - ${sectionCount === 1 ? "1 hour" : sectionCount === 2 ? "up to 1.5 hours" : "up to 2 hours"} of game time available.`}</p>
-        ) : (
-          <p className="text-sm text-text-secondary mb-4">Choose how long you&apos;d like your event to be.</p>
-        )}
-        <div className={`grid grid-cols-1 gap-2 mb-5 ${DURATIONS.length <= 3 ? "sm:grid-cols-3" : DURATIONS.length <= 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
-          {DURATIONS.map((d) => {
-            const isSelected = form.duration === d.value;
-            const isLocked = durationMode === "auto" && sectionCount < d.minSections;
-            return (<div key={d.value} className="relative group"><label className={`block p-4 rounded-xl border-2 text-center transition-all ${isLocked ? "opacity-40 cursor-not-allowed border-gray-200 bg-gray-50" : isSelected ? "border-cta bg-orange-50 cursor-pointer" : "border-border bg-white hover:border-cta/50 cursor-pointer"}`}><input type="radio" name="duration" value={d.value} checked={isSelected} onChange={(e) => { if (!isLocked) { setForm({ ...form, duration: e.target.value }); clearError("duration"); } }} className="sr-only" disabled={isLocked} /><span className="block text-xl font-bold text-text-primary">{d.total}</span><span className="block text-xs text-text-secondary mt-1">{d.gameTime} game time</span></label>{isLocked && (<div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none"><span className="hidden group-hover:block text-[10px] text-cta bg-white border border-cta/20 rounded px-2 py-0.5 shadow-sm whitespace-nowrap">Add more task sections to unlock</span></div>)}</div>);
-          })}
-        </div>
-        {formErrors.duration && <p className="text-sm text-red-600 mb-3">{formErrors.duration}</p>}
-        {form.duration && (
-          <div className="p-5 bg-surface rounded-xl border border-border animate-fade-in">
-            <p className="text-sm text-text-secondary mb-3">Here&apos;s how your {DURATIONS.find((d) => d.value === form.duration)?.total} breaks down:</p>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3"><div className="w-8 h-8 rounded-full bg-cta/10 flex items-center justify-center flex-shrink-0"><span className="text-cta font-bold text-[10px]">30m</span></div><div><p className="font-medium text-text-primary">Introduction</p><p className="text-sm text-text-secondary">Rules explained, players divided into teams, and FAQs answered</p></div></div>
-              <div className="flex items-start gap-3"><div className="w-8 h-8 rounded-full bg-cta/10 flex items-center justify-center flex-shrink-0"><span className="text-cta font-bold text-[10px]">{DURATIONS.find((d) => d.value === form.duration)?.gameTime.replace(" hours", "h").replace(" hour", "h")}</span></div><div><p className="font-medium text-text-primary">Game Time</p><p className="text-sm text-text-secondary">The main event - explore, compete, and complete challenges</p></div></div>
-              <div className="flex items-start gap-3"><div className="w-8 h-8 rounded-full bg-cta/10 flex items-center justify-center flex-shrink-0"><span className="text-cta font-bold text-[10px]">30m</span></div><div><p className="font-medium text-text-primary">Wrap-up</p><p className="text-sm text-text-secondary">Highlights showcase, final scores, and trophy presentation</p></div></div>
+    "duration": () => {
+      const showDurationOptions = isFieldEnabled("duration", "duration-options");
+      const showDurationBreakdown = isFieldEnabled("duration", "duration-breakdown");
+      const descText = cfg.durationDescription || "Choose how long you'd like your event to be.";
+      const breakdownItems = cfg.durationBreakdown || DEFAULT_BOOKING_CONFIG.durationBreakdown || [];
+      // Calculate game time from total duration minus fixed segments
+      const selectedDur = DURATIONS.find((d) => d.value === form.duration);
+      const totalMinutes = selectedDur ? parseFloat(selectedDur.value) * 60 : 0;
+      const fixedMinutes = breakdownItems.reduce((sum, item) => sum + item.durationMinutes, 0);
+      const gameTimeMinutes = Math.max(0, totalMinutes - fixedMinutes);
+
+      const formatMins = (mins: number) => {
+        if (mins >= 60) {
+          const h = mins / 60;
+          return h % 1 === 0 ? `${h}h` : `${h.toFixed(1)}h`;
+        }
+        return `${mins}m`;
+      };
+
+      return (
+        <section key="duration" id="field-duration">
+          <h2 className="text-lg font-bold text-text-primary mb-2 flex items-center gap-2"><FaClock className="text-cta" /> Duration *</h2>
+          {durationMode === "auto" ? (
+            <p className="text-sm text-text-secondary mb-4">{sectionCount === 0 ? "Defaults to 2 hours. Add task sections above to unlock longer durations." : `You have ${sectionCount} task section${sectionCount > 1 ? "s" : ""} - ${sectionCount === 1 ? "1 hour" : sectionCount === 2 ? "up to 1.5 hours" : "up to 2 hours"} of game time available.`}</p>
+          ) : (
+            <p className="text-sm text-text-secondary mb-4">{descText}</p>
+          )}
+          {showDurationOptions && (
+            <div className={`grid grid-cols-1 gap-2 mb-5 ${DURATIONS.length <= 3 ? "sm:grid-cols-3" : DURATIONS.length <= 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+              {DURATIONS.map((d) => {
+                const isSelected = form.duration === d.value;
+                const isLocked = durationMode === "auto" && sectionCount < d.minSections;
+                return (<div key={d.value} className="relative group"><label className={`block p-4 rounded-xl border-2 text-center transition-all ${isLocked ? "opacity-40 cursor-not-allowed border-gray-200 bg-gray-50" : isSelected ? "border-cta bg-orange-50 cursor-pointer" : "border-border bg-white hover:border-cta/50 cursor-pointer"}`}><input type="radio" name="duration" value={d.value} checked={isSelected} onChange={(e) => { if (!isLocked) { setForm({ ...form, duration: e.target.value }); clearError("duration"); } }} className="sr-only" disabled={isLocked} /><span className="block text-xl font-bold text-text-primary">{d.total}</span><span className="block text-xs text-text-secondary mt-1">{d.gameTime} game time</span></label>{isLocked && (<div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none"><span className="hidden group-hover:block text-[10px] text-cta bg-white border border-cta/20 rounded px-2 py-0.5 shadow-sm whitespace-nowrap">Add more task sections to unlock</span></div>)}</div>);
+              })}
             </div>
-          </div>
-        )}
-      </section>
-    ),
+          )}
+          {formErrors.duration && <p className="text-sm text-red-600 mb-3">{formErrors.duration}</p>}
+          {showDurationBreakdown && form.duration && breakdownItems.length > 0 && (
+            <div className="p-5 bg-surface rounded-xl border border-border animate-fade-in">
+              <p className="text-sm text-text-secondary mb-3">Here&apos;s how your {selectedDur?.total} breaks down:</p>
+              <div className="space-y-3">
+                {breakdownItems.map((item, i) => {
+                  const mins = item.durationMinutes === 0 ? gameTimeMinutes : item.durationMinutes;
+                  return (
+                    <div key={i} className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-full bg-cta/10 flex items-center justify-center flex-shrink-0"><span className="text-cta font-bold text-[10px]">{formatMins(mins)}</span></div>
+                      <div><p className="font-medium text-text-primary">{item.label}</p><p className="text-sm text-text-secondary">{item.description}</p></div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </section>
+      );
+    },
     "time-blocking": () => (
       <section key="time-blocking">
         <h2 className="text-lg font-bold text-text-primary mb-2 flex items-center gap-2"><FaLock className="text-cta" /> Time Blocking</h2>

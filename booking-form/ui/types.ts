@@ -45,6 +45,8 @@ export type BookingConfig = {
   travelCharges: Record<string, { label: string; pence: number; canInstantBook: boolean }>;
   durations: { value: string; label: string; gameTime: string; total: string; minSections: number }[];
   durationMode?: "auto" | "manual";
+  durationDescription?: string;
+  durationBreakdown?: { label: string; description: string; durationMinutes: number }[];
   groupTypes: { value: string; label: string }[];
   styles: { value: string; label: string }[];
   drinkStyles: { value: string; label: string }[];

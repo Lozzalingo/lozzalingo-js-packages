@@ -467,6 +467,8 @@ export function AdminEventsPage() {
     messagePlaceholder: "Anything else we should know?",
     durationMode: "auto" as "auto" | "manual",
     durations: [...DEFAULT_BOOKING_CONFIG.durations],
+    durationDescription: DEFAULT_BOOKING_CONFIG.durationDescription || "Choose how long you'd like your event to be.",
+    durationBreakdown: [...(DEFAULT_BOOKING_CONFIG.durationBreakdown || [])],
   });
   const [savingBookingConfig, setSavingBookingConfig] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -549,6 +551,8 @@ export function AdminEventsPage() {
               messagePlaceholder: cfg.messagePlaceholder || "Anything else we should know?",
               durationMode: cfg.durationMode || "auto",
               durations: cfg.durations || [...DEFAULT_BOOKING_CONFIG.durations],
+              durationDescription: cfg.durationDescription || DEFAULT_BOOKING_CONFIG.durationDescription || "",
+              durationBreakdown: cfg.durationBreakdown || DEFAULT_BOOKING_CONFIG.durationBreakdown || [],
             });
             console.log("[AdminEvents] Loaded booking config from settings");
           } catch (err) {
@@ -617,6 +621,8 @@ export function AdminEventsPage() {
         ),
         durationMode: bookingConfig.durationMode,
         durations: bookingConfig.durations,
+        durationDescription: bookingConfig.durationDescription,
+        durationBreakdown: bookingConfig.durationBreakdown,
       };
 
       setAutoSaveStatus("saving");
@@ -3677,6 +3683,31 @@ export function AdminEventsPage() {
                                                             </div>
                                                           ))}
                                                           <button type="button" onClick={addDuration} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add duration</button>
+                                                        </div>
+                                                      )}
+                                                      {/* duration-description */}
+                                                      {fg.id === "duration-description" && (
+                                                        <div className="space-y-1.5">
+                                                          <input type="text" value={bookingConfig.durationDescription || "Choose how long you'd like your event to be."} onChange={(e) => setBookingConfig({ ...bookingConfig, durationDescription: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Description shown above duration options" />
+                                                          <p className="text-[9px] text-gray-500">Shown in manual mode. Auto mode shows task section count info instead.</p>
+                                                        </div>
+                                                      )}
+                                                      {/* duration-breakdown */}
+                                                      {fg.id === "duration-breakdown" && (
+                                                        <div className="space-y-1.5">
+                                                          <p className="text-[9px] text-gray-500 mb-1">Segments shown after selecting a duration. Set minutes to 0 for the game time segment (auto-calculated).</p>
+                                                          {(bookingConfig.durationBreakdown || []).map((seg: { label: string; description: string; durationMinutes: number }, i: number) => (
+                                                            <div key={i} className="bg-gray-900 border border-gray-700 rounded-lg p-2 space-y-1">
+                                                              <div className="flex items-center gap-2">
+                                                                <input type="text" value={seg.label} onChange={(e) => { const items = [...(bookingConfig.durationBreakdown || [])]; items[i] = { ...items[i], label: e.target.value }; setBookingConfig({ ...bookingConfig, durationBreakdown: items }); }} className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                                <input type="number" min="0" value={seg.durationMinutes} onChange={(e) => { const items = [...(bookingConfig.durationBreakdown || [])]; items[i] = { ...items[i], durationMinutes: parseInt(e.target.value) || 0 }; setBookingConfig({ ...bookingConfig, durationBreakdown: items }); }} className="w-14 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" title="Minutes (0 = game time)" />
+                                                                <span className="text-[9px] text-gray-500">mins</span>
+                                                                <button type="button" onClick={() => { const items = (bookingConfig.durationBreakdown || []).filter((_: unknown, idx: number) => idx !== i); setBookingConfig({ ...bookingConfig, durationBreakdown: items }); }} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                              </div>
+                                                              <input type="text" value={seg.description} onChange={(e) => { const items = [...(bookingConfig.durationBreakdown || [])]; items[i] = { ...items[i], description: e.target.value }; setBookingConfig({ ...bookingConfig, durationBreakdown: items }); }} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Description" />
+                                                            </div>
+                                                          ))}
+                                                          <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, durationBreakdown: [...(bookingConfig.durationBreakdown || []), { label: "New segment", description: "", durationMinutes: 0 }] })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add segment</button>
                                                         </div>
                                                       )}
                                                       {/* time-blocking-mode */}

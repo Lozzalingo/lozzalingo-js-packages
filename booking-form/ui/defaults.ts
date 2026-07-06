@@ -20,6 +20,12 @@ export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
     { value: "2.5", label: "2.5 hours", gameTime: "1.5 hours", total: "2.5 hours", minSections: 2 },
     { value: "3", label: "3 hours", gameTime: "2 hours", total: "3 hours", minSections: 3 },
   ],
+  durationDescription: "Choose how long you'd like your event to be.",
+  durationBreakdown: [
+    { label: "Introduction", description: "Rules explained, players divided into teams, and FAQs answered", durationMinutes: 30 },
+    { label: "Game Time", description: "The main event - explore, compete, and complete challenges", durationMinutes: 0 },
+    { label: "Wrap-up", description: "Highlights showcase, final scores, and trophy presentation", durationMinutes: 30 },
+  ],
   groupTypes: [
     { value: "corporate", label: "Corporate" },
     { value: "hen", label: "Hen" },
@@ -89,6 +95,8 @@ export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
     { id: "duration", title: "Duration", icon: "FaClock", enabled: true, order: 5, fieldGroups: [
       { id: "duration-mode", label: "Duration Mode", enabled: true },
       { id: "duration-options", label: "Duration Options", enabled: true },
+      { id: "duration-description", label: "Description Text", enabled: true },
+      { id: "duration-breakdown", label: "Duration Breakdown", enabled: true },
     ]},
     { id: "time-blocking", title: "Time Blocking", icon: "FaLock", enabled: false, order: 6, fieldGroups: [
       { id: "time-blocking-mode", label: "Time Blocking Mode", enabled: true },
