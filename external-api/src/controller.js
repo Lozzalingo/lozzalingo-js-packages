@@ -201,6 +201,15 @@ function createExternalApiController(prisma, options = {}) {
         }
       }
 
+      // Pass through created_at if provided so posts keep their original publish date
+      if (data.created_at || data.createdAt) {
+        const dateVal = new Date(data.created_at || data.createdAt);
+        if (!isNaN(dateVal.getTime())) {
+          createData.createdAt = dateVal;
+          console.log("[ExternalAPI] Using provided createdAt:", dateVal.toISOString());
+        }
+      }
+
       // Source tracking fields are optional - not all models have them
       if (data.source_id || data.sourceId) {
         createData.sourceId = data.source_id || data.sourceId;
@@ -242,8 +251,8 @@ function createExternalApiController(prisma, options = {}) {
         message: "Article created successfully",
       });
     } catch (error) {
-      console.error("[ExternalAPI] Failed to create article:", error.message);
-      return res.status(500).json({ error: "Failed to create article" });
+      console.error("[ExternalAPI] Failed to create article:", error.message, error.stack);
+      return res.status(500).json({ error: "Failed to create article", detail: error.message });
     }
   }
 
@@ -276,6 +285,15 @@ function createExternalApiController(prisma, options = {}) {
       }
       if (data.meta_description !== undefined || data.metaDescription !== undefined) {
         updateData.metaDescription = data.meta_description || data.metaDescription;
+      }
+
+      // Update createdAt if provided (keeps publish date in sync with source)
+      if (data.created_at || data.createdAt) {
+        const dateVal = new Date(data.created_at || data.createdAt);
+        if (!isNaN(dateVal.getTime())) {
+          updateData.createdAt = dateVal;
+          console.log("[ExternalAPI] Updating createdAt to:", dateVal.toISOString());
+        }
       }
 
       // Resolve category by name or ID
