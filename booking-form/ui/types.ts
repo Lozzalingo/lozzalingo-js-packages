@@ -146,6 +146,9 @@ export type BookingPayload = {
   travelChargePence: number;
   locationSlug?: string;
   status?: string;
+  eventFormat?: string;
+  virtualPlatform?: string;
+  venueAddress?: string;
 };
 
 export type CalEvent = {

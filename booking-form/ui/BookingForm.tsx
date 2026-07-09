@@ -277,7 +277,13 @@ export default function BookingForm({
     // Event Format (admin-set)
     if (isFieldEnabled("choose-event", "event-format")) {
       if (cfg.eventFormat === "virtual" && !form.virtualPlatform) errors["virtual-platform"] = "Please choose a platform.";
-      if (cfg.eventFormat !== "virtual" && !form.venueAddress?.trim()) errors["venue-address"] = "Please enter your venue address.";
+      if (cfg.eventFormat !== "virtual") {
+        if (!form.venueAddress || form.venueAddress === "") {
+          errors["venue-address"] = "Please choose a venue option.";
+        } else if (form.venueAddress !== "__public__" && !form.venueAddress.trim()) {
+          errors["venue-address"] = "Please enter your venue address.";
+        }
+      }
     }
     // Group Type
     if (isFieldEnabled("group-type", "group-types")) {
@@ -331,7 +337,8 @@ export default function BookingForm({
         wantsMedals: form.wantsMedals, wantsPhotoPrints: form.wantsPhotoPrints,
         timeBlocking: form.timeBlocking || undefined, bufferHours: form.timeBlocking === "buffer" ? form.bufferHours : undefined,
         travelChargePence, locationSlug: locationSection?.locationSlug || undefined,
-        eventFormat: cfg.eventFormat || "in-person", virtualPlatform: form.virtualPlatform || undefined, venueAddress: form.venueAddress || undefined,
+        eventFormat: cfg.eventFormat || "in-person", virtualPlatform: form.virtualPlatform || undefined,
+        venueAddress: form.venueAddress === "__public__" ? "Public Meeting Space" : (form.venueAddress?.trim() || undefined),
       };
 
       if (!canInstantBook) {
@@ -432,8 +439,23 @@ export default function BookingForm({
             )}
             {isFieldEnabled("choose-event", "event-format") && cfg.eventFormat !== "virtual" && (
               <div id="field-venue-address">
-                <label className="block text-sm font-medium text-text-primary mb-1"><FaMapMarkerAlt className="inline mr-1 text-text-secondary" />Venue Address *</label>
-                <input type="text" value={form.venueAddress} onChange={(e) => { setForm({ ...form, venueAddress: e.target.value }); clearError("venue-address"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["venue-address"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Enter your venue or office address" />
+                <label className="block text-sm font-medium text-text-primary mb-2">Where will you be meeting? *</label>
+                <div className={`grid grid-cols-2 gap-2 ${formErrors["venue-address"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>
+                  <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress === "__public__" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
+                    <input type="radio" name="venueType" checked={form.venueAddress === "__public__"} onChange={() => { setForm({ ...form, venueAddress: "__public__" }); clearError("venue-address"); }} className="sr-only" />
+                    <FaMapMarkerAlt className="text-sm" />Public Meeting Space
+                  </label>
+                  <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress !== "" && form.venueAddress !== "__public__" ? "bg-cta text-white border-cta" : form.venueAddress === "" ? "bg-white text-text-secondary border-border hover:border-cta/50" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
+                    <input type="radio" name="venueType" checked={form.venueAddress !== "" && form.venueAddress !== "__public__"} onChange={() => { setForm({ ...form, venueAddress: " " }); clearError("venue-address"); }} className="sr-only" />
+                    <FaBuilding className="text-sm" />Our Own Venue
+                  </label>
+                </div>
+                {form.venueAddress !== "" && form.venueAddress !== "__public__" && (
+                  <div className="mt-3 animate-fade-in">
+                    <label className="block text-sm font-medium text-text-primary mb-1"><FaMapMarkerAlt className="inline mr-1 text-text-secondary" />Venue Address *</label>
+                    <input type="text" value={form.venueAddress.trim() === "" ? "" : form.venueAddress} onChange={(e) => { setForm({ ...form, venueAddress: e.target.value }); clearError("venue-address"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["venue-address"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Enter your venue or office address" />
+                  </div>
+                )}
                 {formErrors["venue-address"] && <p className="text-sm text-red-600 mt-1">{formErrors["venue-address"]}</p>}
               </div>
             )}
