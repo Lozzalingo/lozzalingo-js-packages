@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   FaCalendarAlt, FaUsers, FaLock, FaCheck,
@@ -80,13 +80,52 @@ export default function BookingForm({
     duration: "2", timeBlocking: "" as "" | "buffer" | "whole-day", bufferHours: "60",
     wantsMedals: false, wantsPhotoPrints: false,
     eventDate: "", eventTime: "", slotStartTime: "", slotEndTime: "", message: "",
-    virtualPlatform: "" as "" | VirtualPlatform, venueAddress: "",
+    virtualPlatform: "" as "" | VirtualPlatform, venueAddress: " ",
   });
   const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitMessage, setSubmitMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [calendarEvents, setCalendarEvents] = useState<CalEvent[]>([]);
   const [blockedCalendarEvents, setBlockedCalendarEvents] = useState<CalEvent[]>([]);
+
+  // ─── Address Autocomplete (Photon / OpenStreetMap) ──────────────────────────
+  const [addressSuggestions, setAddressSuggestions] = useState<{ label: string; raw: Record<string, unknown> }[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  const searchAddress = useCallback((query: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (query.length < 3) { setAddressSuggestions([]); setShowSuggestions(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5`);
+        const data = await res.json();
+        const results = (data.features || []).map((f: Record<string, unknown>) => {
+          const p = f.properties as Record<string, string | undefined>;
+          const parts = [p.name, p.housenumber && p.street ? `${p.housenumber} ${p.street}` : p.street, p.city || p.town || p.village, p.state, p.postcode, p.country].filter(Boolean);
+          return { label: parts.join(", "), raw: p };
+        });
+        setAddressSuggestions(results);
+        setShowSuggestions(results.length > 0);
+        console.log(`[BookingForm] Address search returned ${results.length} results`);
+      } catch (err) {
+        console.error("[BookingForm] Address search failed:", err);
+        setAddressSuggestions([]);
+      }
+    }, 300);
+  }, []);
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   // ─── Data Loading ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -441,19 +480,30 @@ export default function BookingForm({
               <div id="field-venue-address">
                 <label className="block text-sm font-medium text-text-primary mb-2">Where will you be meeting? *</label>
                 <div className={`grid grid-cols-2 gap-2 ${formErrors["venue-address"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>
+                  <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress !== "__public__" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
+                    <input type="radio" name="venueType" checked={form.venueAddress !== "__public__"} onChange={() => { setForm({ ...form, venueAddress: " " }); clearError("venue-address"); }} className="sr-only" />
+                    <FaBuilding className="text-sm" />Our Own Venue
+                  </label>
                   <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress === "__public__" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
                     <input type="radio" name="venueType" checked={form.venueAddress === "__public__"} onChange={() => { setForm({ ...form, venueAddress: "__public__" }); clearError("venue-address"); }} className="sr-only" />
                     <FaMapMarkerAlt className="text-sm" />Public Meeting Space
-                  </label>
-                  <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress !== "" && form.venueAddress !== "__public__" ? "bg-cta text-white border-cta" : form.venueAddress === "" ? "bg-white text-text-secondary border-border hover:border-cta/50" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
-                    <input type="radio" name="venueType" checked={form.venueAddress !== "" && form.venueAddress !== "__public__"} onChange={() => { setForm({ ...form, venueAddress: " " }); clearError("venue-address"); }} className="sr-only" />
-                    <FaBuilding className="text-sm" />Our Own Venue
                   </label>
                 </div>
                 {form.venueAddress !== "" && form.venueAddress !== "__public__" && (
                   <div className="mt-3 animate-fade-in">
                     <label className="block text-sm font-medium text-text-primary mb-1"><FaMapMarkerAlt className="inline mr-1 text-text-secondary" />Venue Address *</label>
-                    <input type="text" value={form.venueAddress.trim() === "" ? "" : form.venueAddress} onChange={(e) => { setForm({ ...form, venueAddress: e.target.value }); clearError("venue-address"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["venue-address"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Enter your venue or office address" />
+                    <div className="relative" ref={suggestionsRef}>
+                      <input type="text" value={form.venueAddress.trim() === "" ? "" : form.venueAddress} onChange={(e) => { setForm({ ...form, venueAddress: e.target.value }); clearError("venue-address"); searchAddress(e.target.value); }} onFocus={() => { if (addressSuggestions.length > 0) setShowSuggestions(true); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["venue-address"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Start typing an address..." autoComplete="off" />
+                      {showSuggestions && addressSuggestions.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-border rounded-lg shadow-lg overflow-hidden">
+                          {addressSuggestions.map((s, i) => (
+                            <button key={i} type="button" className="w-full text-left px-4 py-3 text-sm text-text-primary hover:bg-surface transition flex items-start gap-2 border-b border-border last:border-0" onClick={() => { setForm((prev) => ({ ...prev, venueAddress: s.label })); setShowSuggestions(false); clearError("venue-address"); console.log("[BookingForm] Address selected:", s.label); }}>
+                              <FaMapMarkerAlt className="text-text-secondary mt-0.5 flex-shrink-0" /><span>{s.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
                 {formErrors["venue-address"] && <p className="text-sm text-red-600 mt-1">{formErrors["venue-address"]}</p>}
