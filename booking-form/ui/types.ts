@@ -58,7 +58,10 @@ export type BookingConfig = {
   taskSectionTypes: TaskSectionTypeConfig[];
   productTaskSectionTypes?: Record<string, TaskSectionTypeConfig[]>;
   productGroupTypes?: Record<string, { value: string; label: string }[]>;
-  eventFormats?: { value: EventFormat; label: string }[];
+  /** Admin-set event format: "in-person" or "virtual". Determines what the customer sees. */
+  eventFormat?: EventFormat;
+  /** For virtual events, which platform (set by admin) */
+  virtualPlatform?: VirtualPlatform;
   virtualPlatforms?: { value: VirtualPlatform; label: string }[];
   messagePlaceholder?: string;
   /** Dynamic pricing fields for admin configuration */

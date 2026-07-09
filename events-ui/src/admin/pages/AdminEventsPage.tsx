@@ -469,7 +469,7 @@ export function AdminEventsPage() {
     durations: [...DEFAULT_BOOKING_CONFIG.durations],
     durationDescription: DEFAULT_BOOKING_CONFIG.durationDescription || "Choose how long you'd like your event to be.",
     durationBreakdown: [...(DEFAULT_BOOKING_CONFIG.durationBreakdown || [])],
-    eventFormats: [...(DEFAULT_BOOKING_CONFIG.eventFormats || [])],
+    eventFormat: DEFAULT_BOOKING_CONFIG.eventFormat || "in-person",
     virtualPlatforms: [...(DEFAULT_BOOKING_CONFIG.virtualPlatforms || [])],
   });
   const [savingBookingConfig, setSavingBookingConfig] = useState(false);
@@ -555,7 +555,7 @@ export function AdminEventsPage() {
               durations: cfg.durations || [...DEFAULT_BOOKING_CONFIG.durations],
               durationDescription: cfg.durationDescription || DEFAULT_BOOKING_CONFIG.durationDescription || "",
               durationBreakdown: cfg.durationBreakdown || DEFAULT_BOOKING_CONFIG.durationBreakdown || [],
-              eventFormats: cfg.eventFormats || DEFAULT_BOOKING_CONFIG.eventFormats || [],
+              eventFormat: cfg.eventFormat || DEFAULT_BOOKING_CONFIG.eventFormat || "in-person",
               virtualPlatforms: cfg.virtualPlatforms || DEFAULT_BOOKING_CONFIG.virtualPlatforms || [],
             });
             console.log("[AdminEvents] Loaded booking config from settings");
@@ -627,7 +627,7 @@ export function AdminEventsPage() {
         durations: bookingConfig.durations,
         durationDescription: bookingConfig.durationDescription,
         durationBreakdown: bookingConfig.durationBreakdown,
-        eventFormats: bookingConfig.eventFormats,
+        eventFormat: bookingConfig.eventFormat,
         virtualPlatforms: bookingConfig.virtualPlatforms,
       };
 
@@ -3536,19 +3536,30 @@ export function AdminEventsPage() {
                                                       )}
                                                       {/* event-format */}
                                                       {fg.id === "event-format" && (
-                                                        <div className="space-y-2">
-                                                          <p className="text-[9px] text-gray-500">When enabled, customers choose Virtual or In Person. Virtual shows a platform picker (Zoom/Teams). In Person shows an address field.</p>
-                                                          <div className="space-y-1.5">
-                                                            <label className="text-[10px] text-gray-400 font-semibold">Virtual Platforms</label>
-                                                            {(bookingConfig.virtualPlatforms || []).map((vp: { value: string; label: string }, i: number) => (
-                                                              <div key={i} className="flex items-center gap-2">
-                                                                <input type="text" value={vp.value} onChange={(e) => { const items = [...(bookingConfig.virtualPlatforms || [])]; items[i] = { ...items[i], value: e.target.value }; setBookingConfig({ ...bookingConfig, virtualPlatforms: items }); }} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
-                                                                <input type="text" value={vp.label} onChange={(e) => { const items = [...(bookingConfig.virtualPlatforms || [])]; items[i] = { ...items[i], label: e.target.value }; setBookingConfig({ ...bookingConfig, virtualPlatforms: items }); }} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
-                                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, virtualPlatforms: (bookingConfig.virtualPlatforms || []).filter((_: unknown, idx: number) => idx !== i) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
-                                                              </div>
-                                                            ))}
-                                                            <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, virtualPlatforms: [...(bookingConfig.virtualPlatforms || []), { value: "new-platform", label: "New Platform" }] })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add platform</button>
+                                                        <div className="space-y-3">
+                                                          <div>
+                                                            <label className="text-[10px] text-gray-400 font-semibold mb-1 block">Format</label>
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                              {[{ value: "in-person", label: "In Person", desc: "Customer enters venue address" }, { value: "virtual", label: "Virtual", desc: "Customer picks Zoom or Teams" }].map((mode) => (
+                                                                <button key={mode.value} type="button" onClick={() => setBookingConfig({ ...bookingConfig, eventFormat: mode.value })} className={`p-2 rounded-lg border text-center transition text-xs ${bookingConfig.eventFormat === mode.value ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-600"}`}>
+                                                                  <span className="block font-semibold">{mode.label}</span><span className="block text-[9px] text-gray-500 mt-0.5">{mode.desc}</span>
+                                                                </button>
+                                                              ))}
+                                                            </div>
                                                           </div>
+                                                          {bookingConfig.eventFormat === "virtual" && (
+                                                            <div>
+                                                              <label className="text-[10px] text-gray-400 font-semibold mb-1 block">Virtual Platforms</label>
+                                                              {(bookingConfig.virtualPlatforms || []).map((vp: { value: string; label: string }, i: number) => (
+                                                                <div key={i} className="flex items-center gap-2 mb-1">
+                                                                  <input type="text" value={vp.value} onChange={(e) => { const items = [...(bookingConfig.virtualPlatforms || [])]; items[i] = { ...items[i], value: e.target.value }; setBookingConfig({ ...bookingConfig, virtualPlatforms: items }); }} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
+                                                                  <input type="text" value={vp.label} onChange={(e) => { const items = [...(bookingConfig.virtualPlatforms || [])]; items[i] = { ...items[i], label: e.target.value }; setBookingConfig({ ...bookingConfig, virtualPlatforms: items }); }} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                                  <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, virtualPlatforms: (bookingConfig.virtualPlatforms || []).filter((_: unknown, idx: number) => idx !== i) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                                </div>
+                                                              ))}
+                                                              <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, virtualPlatforms: [...(bookingConfig.virtualPlatforms || []), { value: "new-platform", label: "New Platform" }] })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add platform</button>
+                                                            </div>
+                                                          )}
                                                         </div>
                                                       )}
                                                       {/* first-place-prizes */}
