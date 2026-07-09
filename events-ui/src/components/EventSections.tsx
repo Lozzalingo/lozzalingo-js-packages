@@ -1,6 +1,7 @@
 "use client";
 
-import { FaMapMarkerAlt } from "react-icons/fa";
+import { useState } from "react";
+import { FaMapMarkerAlt, FaChevronDown } from "react-icons/fa";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { EventGallery } from "./EventGallery";
 import { parseJson, parseThemes } from "../lib/utils";
@@ -8,7 +9,7 @@ import { parseJson, parseThemes } from "../lib/utils";
 export type ProductSection = {
   id: number;
   title: string;
-  type: "text" | "list" | "steps" | "bullets" | "cards" | "checklist" | "gallery" | "themes" | "venue";
+  type: "text" | "list" | "steps" | "bullets" | "cards" | "checklist" | "gallery" | "themes" | "venue" | "faq";
   content: string | null;
   listItems: string | null;
   displayOrder: number;
@@ -94,6 +95,21 @@ export function EventSections({ sections, galleryImages, themes, venue, productN
                   </div>
                 </div>
               )}
+            />
+          );
+        }
+
+        // FAQ section - render as accordion (supports type "faq" or list sections titled "FAQ")
+        const isFaq = section.type === "faq" || (section.type === "list" && /^faq/i.test(section.title));
+        if (isFaq && items.length > 0) {
+          return (
+            <CollapsibleSection
+              key={section.id}
+              title={section.title}
+              content=""
+              defaultOpen={false}
+              isCollapsible={collapsible}
+              renderCustomContent={() => <FaqAccordion items={items} />}
             />
           );
         }
@@ -191,6 +207,45 @@ export function EventSections({ sections, galleryImages, themes, venue, productN
               ) : undefined
             }
           />
+        );
+      })}
+    </div>
+  );
+}
+
+/** Accordion-style FAQ: each item is "Question - Answer" or "Question: Answer" */
+function FaqAccordion({ items }: { items: string[] }) {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  return (
+    <div className="pb-4 px-1 space-y-1">
+      {items.map((item, i) => {
+        // Split on " - " or ": " to separate question from answer
+        const sepIdx = item.indexOf(" - ");
+        const colonIdx = item.indexOf(": ");
+        const splitAt = sepIdx !== -1 ? sepIdx : colonIdx;
+        const question = splitAt !== -1 ? item.slice(0, splitAt).trim() : item;
+        const answer = splitAt !== -1 ? item.slice(splitAt + (sepIdx !== -1 ? 3 : 2)).trim() : "";
+        const isOpen = openIndex === i;
+
+        return (
+          <div key={i} className="border border-border rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOpenIndex(isOpen ? null : i)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition gap-3"
+            >
+              <span className="text-sm font-semibold text-text-primary">{question}</span>
+              <FaChevronDown className={`text-text-secondary text-xs flex-shrink-0 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
+            </button>
+            <div className={`grid transition-all duration-300 ease-in-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+              <div className="overflow-hidden">
+                {answer && (
+                  <p className="px-4 pb-3 text-sm text-text-secondary leading-relaxed">{answer}</p>
+                )}
+              </div>
+            </div>
+          </div>
         );
       })}
     </div>

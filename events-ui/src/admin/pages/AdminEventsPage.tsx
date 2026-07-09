@@ -75,7 +75,7 @@ type ProductImage = {
   sortOrder: number;
 };
 
-type SectionType = "text" | "list" | "steps" | "bullets" | "cards" | "checklist" | "gallery" | "themes" | "venue";
+type SectionType = "text" | "list" | "steps" | "bullets" | "cards" | "checklist" | "gallery" | "themes" | "venue" | "faq";
 
 type ProductSection = {
   id: number;
@@ -2685,6 +2685,7 @@ export function AdminEventsPage() {
                                     <option value="bullets">Bullets (list)</option>
                                     <option value="cards">Cards (categorised)</option>
                                     <option value="checklist">Checklist (task list)</option>
+                                    <option value="faq">FAQ (accordion)</option>
                                   </select>
                                 </div>
                                 <div>
@@ -2703,10 +2704,10 @@ export function AdminEventsPage() {
                                     <textarea value={form.content} onChange={(e) => updateSectionForm(formKey, { content: e.target.value })} rows={5} placeholder="<p>Your content here...</p>" className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:border-blue-500 outline-none resize-none" data-action="admin_section_form_content" />
                                   </div>
                                 )}
-                                {["list", "steps", "bullets", "cards", "checklist"].includes(form.type) && (
+                                {["list", "steps", "bullets", "cards", "checklist", "faq"].includes(form.type) && (
                                   <div className="md:col-span-3">
                                     <label className="text-gray-400 text-xs block mb-1">
-                                      {form.type === "steps" ? "Steps (one per line)" : form.type === "bullets" ? "Bullet items (one per line)" : form.type === "cards" ? "Cards (Category: detail, one per line)" : form.type === "checklist" ? "Tasks (Category: task description, one per line)" : "List Items (one per line)"}
+                                      {form.type === "steps" ? "Steps (one per line)" : form.type === "bullets" ? "Bullet items (one per line)" : form.type === "cards" ? "Cards (Category: detail, one per line)" : form.type === "checklist" ? "Tasks (Category: task description, one per line)" : form.type === "faq" ? "FAQs (Question - Answer, one per line)" : "List Items (one per line)"}
                                     </label>
                                     <textarea value={form.listItems} onChange={(e) => updateSectionForm(formKey, { listItems: e.target.value })} rows={5} placeholder={form.type === "steps" ? "Enquire through our website\nReceive a product brochure\nChoose your package\nConfirm your booking" : form.type === "cards" ? "Location: Find a taxi serving coffee in Shoreditch\nPhoto: Create a human pyramid in Hyde Park\nVideo: Re-enact a famous movie scene" : "Item one\nItem two\nItem three"} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none resize-none" data-action="admin_section_form_list_items" />
                                     {form.listItems && (
@@ -3188,10 +3189,10 @@ export function AdminEventsPage() {
                                               <textarea value={form.content} onChange={(e) => updateSectionForm(formKey, { content: e.target.value })} rows={5} placeholder="<p>Your content here...</p>" className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:border-blue-500 outline-none resize-none" />
                                             </div>
                                           )}
-                                          {["list", "steps", "bullets", "cards", "checklist"].includes(form.type) && (
+                                          {["list", "steps", "bullets", "cards", "checklist", "faq"].includes(form.type) && (
                                             <div className="md:col-span-3">
                                               <label className="text-gray-400 text-xs block mb-1">
-                                                {form.type === "steps" ? "Steps (one per line)" : form.type === "bullets" ? "Bullet items (one per line)" : form.type === "cards" ? "Cards (Category: detail, one per line)" : form.type === "checklist" ? "Tasks (Category: task description, one per line)" : "List Items (one per line)"}
+                                                {form.type === "steps" ? "Steps (one per line)" : form.type === "bullets" ? "Bullet items (one per line)" : form.type === "cards" ? "Cards (Category: detail, one per line)" : form.type === "checklist" ? "Tasks (Category: task description, one per line)" : form.type === "faq" ? "FAQs (Question - Answer, one per line)" : "List Items (one per line)"}
                                               </label>
                                               <textarea value={form.listItems} onChange={(e) => updateSectionForm(formKey, { listItems: e.target.value })} rows={5} placeholder={form.type === "steps" ? "Enquire through our website\nReceive a product brochure" : form.type === "cards" ? "Location: Find a taxi serving coffee\nPhoto: Create a human pyramid" : "Item one\nItem two"} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none resize-none" />
                                               {form.listItems && (
