@@ -76,6 +76,7 @@ export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
     { id: "choose-event", title: "Choose Your Event", icon: "FaUsers", enabled: true, order: 2, fields: { showEventSelector: true }, fieldGroups: [
       { id: "group-size", label: "Group Size", enabled: true },
       { id: "event-selector", label: "Event Selector", enabled: true },
+      { id: "event-format", label: "Event Format (Virtual/In Person)", enabled: true },
       { id: "whats-included", label: "What's Included", enabled: true },
       { id: "first-place-prizes", label: "First Place Prizes", enabled: true },
       { id: "base-pricing", label: "Base Pricing", enabled: true },
@@ -119,5 +120,13 @@ export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
     { id: "location", label: "Location", description: "Area-based tasks", enabled: true, pricePounds: "0" },
     { id: "miscellaneous", label: "Miscellaneous", description: "Themed tasks", enabled: true, pricePounds: "0" },
     { id: "bespoke", label: "Personalised", description: "Custom tasks tailored to you", enabled: true, pricePounds: "30.00" },
+  ],
+  eventFormats: [
+    { value: "in-person", label: "In Person" },
+    { value: "virtual", label: "Virtual" },
+  ],
+  virtualPlatforms: [
+    { value: "zoom", label: "Zoom" },
+    { value: "microsoft-teams", label: "Microsoft Teams" },
   ],
 };

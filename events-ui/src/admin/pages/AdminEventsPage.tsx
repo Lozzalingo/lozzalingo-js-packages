@@ -469,6 +469,8 @@ export function AdminEventsPage() {
     durations: [...DEFAULT_BOOKING_CONFIG.durations],
     durationDescription: DEFAULT_BOOKING_CONFIG.durationDescription || "Choose how long you'd like your event to be.",
     durationBreakdown: [...(DEFAULT_BOOKING_CONFIG.durationBreakdown || [])],
+    eventFormats: [...(DEFAULT_BOOKING_CONFIG.eventFormats || [])],
+    virtualPlatforms: [...(DEFAULT_BOOKING_CONFIG.virtualPlatforms || [])],
   });
   const [savingBookingConfig, setSavingBookingConfig] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -553,6 +555,8 @@ export function AdminEventsPage() {
               durations: cfg.durations || [...DEFAULT_BOOKING_CONFIG.durations],
               durationDescription: cfg.durationDescription || DEFAULT_BOOKING_CONFIG.durationDescription || "",
               durationBreakdown: cfg.durationBreakdown || DEFAULT_BOOKING_CONFIG.durationBreakdown || [],
+              eventFormats: cfg.eventFormats || DEFAULT_BOOKING_CONFIG.eventFormats || [],
+              virtualPlatforms: cfg.virtualPlatforms || DEFAULT_BOOKING_CONFIG.virtualPlatforms || [],
             });
             console.log("[AdminEvents] Loaded booking config from settings");
           } catch (err) {
@@ -623,6 +627,8 @@ export function AdminEventsPage() {
         durations: bookingConfig.durations,
         durationDescription: bookingConfig.durationDescription,
         durationBreakdown: bookingConfig.durationBreakdown,
+        eventFormats: bookingConfig.eventFormats,
+        virtualPlatforms: bookingConfig.virtualPlatforms,
       };
 
       setAutoSaveStatus("saving");
@@ -846,6 +852,9 @@ export function AdminEventsPage() {
     });
   }
 
+  // Built-in task section type IDs that map to hardcoded form content (location dropdown, misc themes, bespoke questionnaire)
+  const BUILT_IN_TASK_SECTION_IDS = new Set(["location", "miscellaneous", "bespoke"]);
+
   function addTaskSectionType(productSlug: string) {
     const current = getProductTaskSectionTypes(productSlug);
     const id = `section-type-${Date.now()}`;
@@ -1012,6 +1021,19 @@ export function AdminEventsPage() {
         durationMode: bookingConfig.durationMode,
         durations: bookingConfig.durations,
       };
+
+      // Sanitise task section types: ensure built-in IDs (location, miscellaneous, bespoke) are present in global types
+      const builtInIds = ["location", "miscellaneous", "bespoke"];
+      const globalIds = new Set((cfg.taskSectionTypes || []).map((t: TaskSectionTypeConfig) => t.id));
+      for (const bid of builtInIds) {
+        if (!globalIds.has(bid)) {
+          const defaultType = DEFAULT_TASK_SECTION_TYPES.find((t) => t.id === bid);
+          if (defaultType) {
+            cfg.taskSectionTypes = [...(cfg.taskSectionTypes || []), { ...defaultType }];
+            console.log(`[AdminEvents] Re-added missing built-in task section type: ${bid}`);
+          }
+        }
+      }
 
       console.log("[AdminEvents] Saving booking config:", cfg);
       const res = await fetch(`${apiBase}/api/app-settings`, {
@@ -3512,6 +3534,23 @@ export function AdminEventsPage() {
                                                       {fg.id === "whats-included" && (
                                                         <textarea value={bookingConfig.whatsIncluded} onChange={(e) => setBookingConfig({ ...bookingConfig, whatsIncluded: e.target.value })} rows={4} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:border-emerald-500 outline-none resize-none" placeholder="One item per line..." />
                                                       )}
+                                                      {/* event-format */}
+                                                      {fg.id === "event-format" && (
+                                                        <div className="space-y-2">
+                                                          <p className="text-[9px] text-gray-500">When enabled, customers choose Virtual or In Person. Virtual shows a platform picker (Zoom/Teams). In Person shows an address field.</p>
+                                                          <div className="space-y-1.5">
+                                                            <label className="text-[10px] text-gray-400 font-semibold">Virtual Platforms</label>
+                                                            {(bookingConfig.virtualPlatforms || []).map((vp: { value: string; label: string }, i: number) => (
+                                                              <div key={i} className="flex items-center gap-2">
+                                                                <input type="text" value={vp.value} onChange={(e) => { const items = [...(bookingConfig.virtualPlatforms || [])]; items[i] = { ...items[i], value: e.target.value }; setBookingConfig({ ...bookingConfig, virtualPlatforms: items }); }} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
+                                                                <input type="text" value={vp.label} onChange={(e) => { const items = [...(bookingConfig.virtualPlatforms || [])]; items[i] = { ...items[i], label: e.target.value }; setBookingConfig({ ...bookingConfig, virtualPlatforms: items }); }} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
+                                                                <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, virtualPlatforms: (bookingConfig.virtualPlatforms || []).filter((_: unknown, idx: number) => idx !== i) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                              </div>
+                                                            ))}
+                                                            <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, virtualPlatforms: [...(bookingConfig.virtualPlatforms || []), { value: "new-platform", label: "New Platform" }] })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add platform</button>
+                                                          </div>
+                                                        </div>
+                                                      )}
                                                       {/* first-place-prizes */}
                                                       {fg.id === "first-place-prizes" && (
                                                         <div className="space-y-1.5">
@@ -3649,15 +3688,23 @@ export function AdminEventsPage() {
                                                           {!bookingConfig.productTaskSectionTypes[product.slug] && (
                                                             <p className="text-[9px] text-gray-600 mb-1">Using global defaults. Edit below to customise for this event.</p>
                                                           )}
-                                                          {getProductTaskSectionTypes(product.slug).map((sType) => (
+                                                          {getProductTaskSectionTypes(product.slug).map((sType) => {
+                                                            const isBuiltIn = BUILT_IN_TASK_SECTION_IDS.has(sType.id);
+                                                            return (
                                                             <div key={sType.id} className="flex items-center gap-2">
+                                                              {isBuiltIn && <span className="text-[9px] text-gray-500 bg-gray-800 rounded px-1.5 py-0.5 font-mono shrink-0">{sType.id}</span>}
                                                               <input type="text" value={sType.label} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { label: e.target.value })} className="w-20 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
                                                               <input type="text" value={sType.description} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { description: e.target.value })} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
                                                               <div className="relative w-16"><span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">&pound;</span><input type="number" step="0.01" value={sType.pricePounds} onChange={(e) => updateTaskSectionType(product.slug, sType.id, { pricePounds: e.target.value })} className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-5 pr-1 py-1 text-xs text-white focus:border-emerald-500 outline-none" /></div>
                                                               <button type="button" onClick={() => updateTaskSectionType(product.slug, sType.id, { enabled: !sType.enabled })} className="text-base">{sType.enabled ? <FaToggleOn className="text-emerald-400" /> : <FaToggleOff className="text-gray-600" />}</button>
-                                                              <button type="button" onClick={() => removeTaskSectionType(product.slug, sType.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                              {!isBuiltIn ? (
+                                                                <button type="button" onClick={() => removeTaskSectionType(product.slug, sType.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
+                                                              ) : (
+                                                                <span className="w-4" />
+                                                              )}
                                                             </div>
-                                                          ))}
+                                                            );
+                                                          })}
                                                           <button type="button" onClick={() => addTaskSectionType(product.slug)} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add type</button>
                                                         </div>
                                                       )}

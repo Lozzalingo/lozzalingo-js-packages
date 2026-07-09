@@ -49,6 +49,12 @@ function createOutreachService(prisma, emailService, options = {}) {
     "booking_paid_admin",
   ]);
 
+  // Triggers that go to customer AND send a copy to admin
+  const ADMIN_COPY_TRIGGERS = new Set([
+    "invoice_email",
+    "booking_confirmation",
+  ]);
+
   /**
    * Fire a trigger immediately.
    * @param {string} triggerName - e.g. "booking_confirmation", "invoice_email"
@@ -129,6 +135,20 @@ function createOutreachService(prisma, emailService, options = {}) {
         console.error("[Outreach] Email send failed:", sendError.message);
         error = sendError.message;
         sent = false;
+      }
+
+      // 5b. Send admin copy for triggers that need it
+      if (sent && ADMIN_COPY_TRIGGERS.has(triggerName) && adminEmail && recipientEmail !== adminEmail) {
+        try {
+          await emailService.sendEmail({
+            to: adminEmail,
+            subject: `[Copy] ${subject}`,
+            html,
+          });
+          console.log(`[Outreach] Admin copy sent for ${triggerName} to ${adminEmail}`);
+        } catch (copyError) {
+          console.error("[Outreach] Admin copy failed:", copyError.message);
+        }
       }
 
       // 6. Log to OutreachLog (success or failure)

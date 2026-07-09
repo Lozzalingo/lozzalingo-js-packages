@@ -6,17 +6,19 @@ import {
   FaCalendarAlt, FaUsers, FaLock, FaCheck,
   FaEnvelope, FaPhone, FaBuilding, FaUser, FaTheaterMasks,
   FaClock, FaMedal, FaCamera, FaStar, FaMapMarkerAlt, FaPuzzlePiece, FaPlus, FaTimes, FaInfoCircle, FaArrowDown,
+  FaVideo, FaLaptop,
 } from "react-icons/fa";
 import type {
   BookingFormProps, BookingConfig, TaskSectionType, TaskSection,
   TaskSectionTypeConfig, NormalizedProduct, NormalizedLocation, CalEvent,
+  EventFormat, VirtualPlatform,
 } from "./types";
 import { DEFAULT_BOOKING_CONFIG } from "./defaults";
 import { formatPence, calculateTotal, getTaskSectionPricePence } from "./pricing";
 
 // Re-export types and defaults for convenience
 export { DEFAULT_BOOKING_CONFIG } from "./defaults";
-export type { BookingFormProps, BookingConfig, BookingFormSection, BookingAddOn, TaskSectionTypeConfig, BookingPayload, BookingFormApi, NormalizedProduct, NormalizedLocation, SectionFieldGroup } from "./types";
+export type { BookingFormProps, BookingConfig, BookingFormSection, BookingAddOn, TaskSectionTypeConfig, BookingPayload, BookingFormApi, NormalizedProduct, NormalizedLocation, SectionFieldGroup, EventFormat, VirtualPlatform } from "./types";
 
 // Icon mapping for task section types
 const TASK_SECTION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -78,6 +80,7 @@ export default function BookingForm({
     duration: "2", timeBlocking: "" as "" | "buffer" | "whole-day", bufferHours: "60",
     wantsMedals: false, wantsPhotoPrints: false,
     eventDate: "", eventTime: "", slotStartTime: "", slotEndTime: "", message: "",
+    eventFormat: "in-person" as "" | EventFormat, virtualPlatform: "" as "" | VirtualPlatform, venueAddress: "",
   });
   const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -271,6 +274,12 @@ export default function BookingForm({
     if (isFieldEnabled("choose-event", "event-selector") && !form.productId) errors.event = "Please choose your event.";
     if (isFieldEnabled("choose-event", "group-size") && groupSizeNum < cfg.minPlayers) errors["group-size"] = `Minimum group size is ${cfg.minPlayers} players.`;
     if (isFieldEnabled("choose-event", "first-place-prizes") && !form.firstPlacePrize) errors["first-place-prize"] = "Please choose a first place prize.";
+    // Event Format
+    if (isFieldEnabled("choose-event", "event-format")) {
+      if (!form.eventFormat) errors["event-format"] = "Please select virtual or in person.";
+      if (form.eventFormat === "virtual" && !form.virtualPlatform) errors["virtual-platform"] = "Please choose a platform.";
+      if (form.eventFormat === "in-person" && !form.venueAddress?.trim()) errors["venue-address"] = "Please enter your venue address.";
+    }
     // Group Type
     if (isFieldEnabled("group-type", "group-types")) {
       if (!form.groupType) errors["group-type"] = "Please select a group type.";
@@ -323,6 +332,7 @@ export default function BookingForm({
         wantsMedals: form.wantsMedals, wantsPhotoPrints: form.wantsPhotoPrints,
         timeBlocking: form.timeBlocking || undefined, bufferHours: form.timeBlocking === "buffer" ? form.bufferHours : undefined,
         travelChargePence, locationSlug: locationSection?.locationSlug || undefined,
+        eventFormat: form.eventFormat || undefined, virtualPlatform: form.virtualPlatform || undefined, venueAddress: form.venueAddress || undefined,
       };
 
       if (!canInstantBook) {
@@ -402,6 +412,42 @@ export default function BookingForm({
             )}
             {showEventSel && (
               <div id="field-event"><label className="block text-sm font-medium text-text-primary mb-1">Choose Your Event *</label><select required value={form.productId} onChange={(e) => { setForm({ ...form, productId: e.target.value }); clearError("event"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.event ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition bg-white`}><option value="">Select an event...</option>{loadingProducts ? <option disabled>Loading...</option> : products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.duration ? ` (${p.duration})` : ""}</option>)}</select>{formErrors.event && <p className="text-sm text-red-600 mt-1">{formErrors.event}</p>}</div>
+            )}
+            {isFieldEnabled("choose-event", "event-format") && (
+              <div id="field-event-format">
+                <label className="block text-sm font-medium text-text-primary mb-2">Event Format *</label>
+                <div className={`grid grid-cols-2 gap-2 ${formErrors["event-format"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>
+                  {(cfg.eventFormats || DEFAULT_BOOKING_CONFIG.eventFormats || []).map((ef) => (
+                    <label key={ef.value} className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.eventFormat === ef.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
+                      <input type="radio" name="eventFormat" value={ef.value} checked={form.eventFormat === ef.value} onChange={(e) => { setForm({ ...form, eventFormat: e.target.value as EventFormat, virtualPlatform: "", venueAddress: "" }); clearError("event-format"); }} className="sr-only" />
+                      {ef.value === "virtual" ? <FaVideo className="text-sm" /> : <FaMapMarkerAlt className="text-sm" />}
+                      {ef.label}
+                    </label>
+                  ))}
+                </div>
+                {formErrors["event-format"] && <p className="text-sm text-red-600 mt-1">{formErrors["event-format"]}</p>}
+                {form.eventFormat === "virtual" && (
+                  <div className="mt-3 animate-fade-in space-y-3">
+                    <label className="block text-sm font-medium text-text-primary mb-2">Which platform? *</label>
+                    <div className={`grid grid-cols-2 gap-2 ${formErrors["virtual-platform"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>
+                      {(cfg.virtualPlatforms || DEFAULT_BOOKING_CONFIG.virtualPlatforms || []).map((vp) => (
+                        <label key={vp.value} className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.virtualPlatform === vp.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
+                          <input type="radio" name="virtualPlatform" value={vp.value} checked={form.virtualPlatform === vp.value} onChange={(e) => { setForm({ ...form, virtualPlatform: e.target.value as VirtualPlatform }); clearError("virtual-platform"); }} className="sr-only" />
+                          <FaLaptop className="text-sm" />{vp.label}
+                        </label>
+                      ))}
+                    </div>
+                    {formErrors["virtual-platform"] && <p className="text-sm text-red-600 mt-1">{formErrors["virtual-platform"]}</p>}
+                  </div>
+                )}
+                {form.eventFormat === "in-person" && (
+                  <div className="mt-3 animate-fade-in">
+                    <label className="block text-sm font-medium text-text-primary mb-1"><FaMapMarkerAlt className="inline mr-1 text-text-secondary" />Venue Address *</label>
+                    <input type="text" value={form.venueAddress} onChange={(e) => { setForm({ ...form, venueAddress: e.target.value }); clearError("venue-address"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["venue-address"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Enter your venue or office address" />
+                    {formErrors["venue-address"] && <p className="text-sm text-red-600 mt-1">{formErrors["venue-address"]}</p>}
+                  </div>
+                )}
+              </div>
             )}
             {showWhatsIncluded && (
               <div className="p-5 bg-surface rounded-xl border border-border">

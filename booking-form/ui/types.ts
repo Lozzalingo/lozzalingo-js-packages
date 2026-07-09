@@ -58,10 +58,15 @@ export type BookingConfig = {
   taskSectionTypes: TaskSectionTypeConfig[];
   productTaskSectionTypes?: Record<string, TaskSectionTypeConfig[]>;
   productGroupTypes?: Record<string, { value: string; label: string }[]>;
+  eventFormats?: { value: EventFormat; label: string }[];
+  virtualPlatforms?: { value: VirtualPlatform; label: string }[];
   messagePlaceholder?: string;
   /** Dynamic pricing fields for admin configuration */
   pricingFields?: { id: string; label: string; value: string; category: "base" | "addon"; perPerson: boolean; mandatory?: boolean; pricingType?: "fixed" | "per-person" }[];
 };
+
+export type EventFormat = "in-person" | "virtual";
+export type VirtualPlatform = "zoom" | "microsoft-teams";
 
 export type TaskSectionType = "location" | "miscellaneous" | "bespoke";
 
@@ -75,6 +80,10 @@ export type TaskSection = {
   useCustomEnd?: boolean;
   customEndAddress?: string;
   venueNotes?: string;
+  /** Virtual event fields */
+  virtualPlatform?: VirtualPlatform;
+  /** In-person custom address (non-location events) */
+  venueAddress?: string;
 };
 
 export type NormalizedProduct = {
