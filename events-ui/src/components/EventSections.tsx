@@ -218,7 +218,7 @@ function FaqAccordion({ items }: { items: string[] }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <div className="pb-4 px-1 space-y-1">
+    <div className="pb-4 px-1 space-y-2">
       {items.map((item, i) => {
         // Split on " - " or ": " to separate question from answer
         const sepIdx = item.indexOf(" - ");
@@ -229,19 +229,24 @@ function FaqAccordion({ items }: { items: string[] }) {
         const isOpen = openIndex === i;
 
         return (
-          <div key={i} className="border border-border rounded-lg overflow-hidden">
+          <div key={i} className={`rounded-lg overflow-hidden border transition-colors duration-200 ${isOpen ? "border-orange-300 bg-orange-50" : "border-border hover:border-orange-200 hover:bg-orange-50/30"}`}>
             <button
               type="button"
               onClick={() => setOpenIndex(isOpen ? null : i)}
-              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition gap-3"
+              className="w-full flex items-center justify-between px-4 py-3.5 text-left gap-3"
             >
-              <span className="text-sm font-semibold text-text-primary">{question}</span>
-              <FaChevronDown className={`text-text-secondary text-xs flex-shrink-0 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
+              <div className="flex items-center gap-3">
+                <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold flex-shrink-0 transition-colors duration-200 ${isOpen ? "bg-orange-500 text-white" : "bg-orange-100 text-orange-600"}`}>?</span>
+                <span className={`text-sm font-semibold transition-colors duration-200 ${isOpen ? "text-orange-700" : "text-text-primary"}`}>{question}</span>
+              </div>
+              <FaChevronDown className={`text-orange-400 text-xs flex-shrink-0 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
             </button>
             <div className={`grid transition-all duration-300 ease-in-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
               <div className="overflow-hidden">
                 {answer && (
-                  <p className="px-4 pb-3 text-sm text-text-secondary leading-relaxed">{answer}</p>
+                  <div className="px-4 pb-4 pl-[3.25rem]">
+                    <p className="text-sm text-text-secondary leading-relaxed">{answer}</p>
+                  </div>
                 )}
               </div>
             </div>

@@ -2788,6 +2788,7 @@ export function AdminEventsPage() {
                                 : section.type === "steps" ? <FaTags className="text-green-400 text-xs" />
                                 : section.type === "cards" ? <FaTags className="text-red-400 text-xs" />
                                 : section.type === "checklist" ? <FaCheck className="text-amber-400 text-xs" />
+                                : section.type === "faq" ? <FaListUl className="text-orange-400 text-xs" />
                                 : <FaTags className="text-orange-400 text-xs" />;
                               const sectionBadge = section.type === "gallery" ? "bg-purple-500/20 text-purple-400"
                                 : section.type === "themes" ? "bg-yellow-500/20 text-yellow-400"
@@ -2796,6 +2797,7 @@ export function AdminEventsPage() {
                                 : section.type === "steps" ? "bg-green-500/20 text-green-400"
                                 : section.type === "cards" ? "bg-red-500/20 text-red-400"
                                 : section.type === "checklist" ? "bg-amber-500/20 text-amber-400"
+                                : section.type === "faq" ? "bg-orange-500/20 text-orange-400"
                                 : "bg-orange-500/20 text-orange-400";
 
                               return (
