@@ -30,7 +30,7 @@ export type ProductImage = {
 export type ProductSectionData = {
   id: number;
   title: string;
-  type: "text" | "list" | "steps" | "bullets" | "cards" | "checklist" | "gallery" | "themes" | "venue";
+  type: "text" | "list" | "steps" | "bullets" | "cards" | "checklist" | "gallery" | "themes" | "venue" | "video" | "faq";
   content: string | null;
   listItems: string | null;
   displayOrder: number;

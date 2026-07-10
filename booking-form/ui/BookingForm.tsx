@@ -18,7 +18,7 @@ import { formatPence, calculateTotal, getTaskSectionPricePence } from "./pricing
 
 // Re-export types and defaults for convenience
 export { DEFAULT_BOOKING_CONFIG } from "./defaults";
-export type { BookingFormProps, BookingConfig, BookingFormSection, BookingAddOn, TaskSectionTypeConfig, BookingPayload, BookingFormApi, NormalizedProduct, NormalizedLocation, SectionFieldGroup, EventFormat, VirtualPlatform } from "./types";
+export type { BookingFormProps, BookingConfig, BookingFormSection, BookingAddOn, TaskSectionTypeConfig, BookingPayload, BookingFormApi, NormalizedProduct, NormalizedLocation, SectionFieldGroup, EventFormat, VirtualPlatform, ProductPricing } from "./types";
 
 // Icon mapping for task section types
 const TASK_SECTION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -166,6 +166,14 @@ export default function BookingForm({
   const selectedProduct = products.find((p) => p.id === form.productId);
   const groupSizeNum = parseInt(form.groupSize) || 0;
 
+  // Per-product pricing (falls back to global config)
+  const productPricingOverride = selectedProduct?.slug ? cfg.productPricing?.[selectedProduct.slug] : undefined;
+  const pricing = useMemo(() => ({
+    pricePerPerson: productPricingOverride?.pricePerPerson ?? pricing.pricePerPerson,
+    minPlayers: productPricingOverride?.minPlayers ?? pricing.minPlayers,
+    minReserve: productPricingOverride?.minReserve ?? pricing.minReserve,
+  }), [productPricingOverride, pricing.pricePerPerson, pricing.minPlayers, pricing.minReserve]);
+
   // Per-product task section types
   const activeTaskSectionTypes = useMemo(() => {
     if (selectedProduct?.slug && cfg.productTaskSectionTypes?.[selectedProduct.slug]) {
@@ -197,7 +205,7 @@ export default function BookingForm({
   const travelChargePence = travelChargeInfo.pence;
   const canInstantBook = travelChargeInfo.canInstantBook;
 
-  const totalPence = groupSizeNum > 0 ? calculateTotal(groupSizeNum, taskSections, form.wantsMedals, form.wantsPhotoPrints, travelChargePence, cfg, activeTaskSectionTypes) : 0;
+  const totalPence = groupSizeNum > 0 ? calculateTotal(groupSizeNum, taskSections, form.wantsMedals, form.wantsPhotoPrints, travelChargePence, cfg, activeTaskSectionTypes, productPricingOverride) : 0;
   const isCorporate = form.groupType === "corporate";
   const isOther = form.groupType === "other";
   const durationMinutes = form.duration ? parseFloat(form.duration) * 60 : 0;
@@ -311,7 +319,7 @@ export default function BookingForm({
     }
     // Choose Event
     if (isFieldEnabled("choose-event", "event-selector") && !form.productId) errors.event = "Please choose your event.";
-    if (isFieldEnabled("choose-event", "group-size") && groupSizeNum < cfg.minPlayers) errors["group-size"] = `Minimum group size is ${cfg.minPlayers} players.`;
+    if (isFieldEnabled("choose-event", "group-size") && groupSizeNum < pricing.minPlayers) errors["group-size"] = `Minimum group size is ${pricing.minPlayers} players.`;
     if (isFieldEnabled("choose-event", "first-place-prizes") && !form.firstPlacePrize) errors["first-place-prize"] = "Please choose a first place prize.";
     // Event Format (admin-set)
     if (isFieldEnabled("choose-event", "event-format")) {
@@ -366,7 +374,7 @@ export default function BookingForm({
       }
       setFormErrors({});
       const customerName = `${form.firstName} ${form.lastName}`.trim();
-      const priceInPence = calculateTotal(groupSizeNum, taskSections, form.wantsMedals, form.wantsPhotoPrints, travelChargePence, cfg, activeTaskSectionTypes);
+      const priceInPence = calculateTotal(groupSizeNum, taskSections, form.wantsMedals, form.wantsPhotoPrints, travelChargePence, cfg, activeTaskSectionTypes, productPricingOverride);
       const payload = {
         eventTitle: selectedProduct?.name || "Booking", imageUrl: getImageUrl(selectedProduct?.coverImage) || undefined, customerEmail: form.email, customerName, customerPhone: form.phone,
         companyName: form.companyName || undefined, groupSize: groupSizeNum, eventDate: form.eventDate || undefined, priceInPence,
@@ -453,7 +461,7 @@ export default function BookingForm({
           <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaUsers className="text-cta" /> Choose Your Event</h2>
           <div className="space-y-4">
             {showGroupSize && (
-              <div id="field-group-size"><label className="block text-sm font-medium text-text-primary mb-1">Group Size * <span className="font-normal text-text-secondary">(minimum {cfg.minPlayers})</span></label><div className="relative"><FaUsers className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" /><input type="number" required min={cfg.minPlayers} value={form.groupSize} onChange={(e) => { setForm({ ...form, groupSize: e.target.value }); clearError("group-size"); }} className={`w-full pl-10 pr-4 py-3 rounded-lg border ${formErrors["group-size"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder={String(cfg.minPlayers)} /></div>{formErrors["group-size"] ? <p className="text-sm text-red-600 mt-1">{formErrors["group-size"]}</p> : groupSizeNum > 0 && groupSizeNum < cfg.minPlayers && <p className="text-xs text-cta mt-1">Minimum {cfg.minPlayers} players required</p>}</div>
+              <div id="field-group-size"><label className="block text-sm font-medium text-text-primary mb-1">Group Size * <span className="font-normal text-text-secondary">(minimum {pricing.minPlayers})</span></label><div className="relative"><FaUsers className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" /><input type="number" required min={pricing.minPlayers} value={form.groupSize} onChange={(e) => { setForm({ ...form, groupSize: e.target.value }); clearError("group-size"); }} className={`w-full pl-10 pr-4 py-3 rounded-lg border ${formErrors["group-size"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder={String(pricing.minPlayers)} /></div>{formErrors["group-size"] ? <p className="text-sm text-red-600 mt-1">{formErrors["group-size"]}</p> : groupSizeNum > 0 && groupSizeNum < pricing.minPlayers && <p className="text-xs text-cta mt-1">Minimum {pricing.minPlayers} players required</p>}</div>
             )}
             {showEventSel && (
               <div id="field-event"><label className="block text-sm font-medium text-text-primary mb-1">Choose Your Event *</label><select required value={form.productId} onChange={(e) => { setForm({ ...form, productId: e.target.value }); clearError("event"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.event ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition bg-white`}><option value="">Select an event...</option>{loadingProducts ? <option disabled>Loading...</option> : products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.duration ? ` (${p.duration})` : ""}</option>)}</select>{formErrors.event && <p className="text-sm text-red-600 mt-1">{formErrors.event}</p>}</div>
@@ -514,14 +522,14 @@ export default function BookingForm({
                 <h3 className="font-bold text-text-primary mb-3">What&apos;s Included</h3>
                 <ul className="space-y-2">{cfg.whatsIncluded.map((item) => (<li key={item} className="text-sm text-text-secondary flex items-start gap-2"><FaCheck className="text-success text-xs mt-1 flex-shrink-0" /><span>{item}</span></li>))}</ul>
                 {showBasePricing && (
-                  <div className="mt-4 pt-3 border-t border-border"><p className="text-sm text-text-primary font-semibold">{formatPence(cfg.pricePerPerson)} per person</p><p className="text-xs text-text-secondary mt-1">Minimum reserve: {formatPence(cfg.minReserve)} (covers {cfg.minPlayers} players). Additional players at {formatPence(cfg.pricePerPerson)} each.</p></div>
+                  <div className="mt-4 pt-3 border-t border-border"><p className="text-sm text-text-primary font-semibold">{formatPence(pricing.pricePerPerson)} per person</p><p className="text-xs text-text-secondary mt-1">Minimum reserve: {formatPence(pricing.minReserve)} (covers {pricing.minPlayers} players). Additional players at {formatPence(pricing.pricePerPerson)} each.</p></div>
                 )}
               </div>
             )}
             {!showWhatsIncluded && showBasePricing && (
               <div className="p-4 bg-surface rounded-xl border border-border">
-                <p className="text-sm text-text-primary font-semibold">{formatPence(cfg.pricePerPerson)} per person</p>
-                <p className="text-xs text-text-secondary mt-1">Minimum reserve: {formatPence(cfg.minReserve)} (covers {cfg.minPlayers} players). Additional players at {formatPence(cfg.pricePerPerson)} each.</p>
+                <p className="text-sm text-text-primary font-semibold">{formatPence(pricing.pricePerPerson)} per person</p>
+                <p className="text-xs text-text-secondary mt-1">Minimum reserve: {formatPence(pricing.minReserve)} (covers {pricing.minPlayers} players). Additional players at {formatPence(pricing.pricePerPerson)} each.</p>
               </div>
             )}
             {showFirstPlacePrizes && (
@@ -749,7 +757,7 @@ export default function BookingForm({
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2"><Icon className="text-highlight" /><span className="font-semibold text-text-primary">{addon.name}</span></div>
-                      <span className="font-bold text-cta">+{formatPence(addon.pricePP)} <span className="text-sm font-normal text-text-secondary">/ person</span></span>
+                      <span className="font-bold text-cta">+{formatPence(addon.pricingType === "flat" ? (addon.priceFlat ?? 0) : addon.pricePP)} {addon.pricingType !== "flat" && <span className="text-sm font-normal text-text-secondary">/ person</span>}</span>
                     </div>
                     <p className="text-sm text-text-secondary mt-1">{addon.description}</p>
                   </div>
@@ -815,13 +823,13 @@ export default function BookingForm({
           return (<div key={sec.id} className="bg-surface/50 rounded-xl border border-border p-5 md:p-6">{renderer()}</div>);
         })}
 
-        {groupSizeNum >= cfg.minPlayers && (
+        {groupSizeNum >= pricing.minPlayers && (
           <div className="p-5 bg-surface rounded-xl border border-border">
             <h3 className="font-bold text-text-primary mb-3">Booking Summary</h3>
             <div className="space-y-2 text-sm">
               {selectedProduct && <div className="flex justify-between text-text-secondary"><span>{selectedProduct.name}</span></div>}
-              <div className="flex justify-between text-text-secondary"><span>{groupSizeNum} {groupSizeNum === 1 ? "player" : "players"} x {formatPence(cfg.pricePerPerson)}</span><span>{formatPence(groupSizeNum * cfg.pricePerPerson)}</span></div>
-              {groupSizeNum * cfg.pricePerPerson < cfg.minReserve && <div className="flex justify-between text-text-secondary text-xs italic"><span>Minimum reserve ({cfg.minPlayers} players)</span><span>{formatPence(cfg.minReserve)}</span></div>}
+              <div className="flex justify-between text-text-secondary"><span>{groupSizeNum} {groupSizeNum === 1 ? "player" : "players"} x {formatPence(pricing.pricePerPerson)}</span><span>{formatPence(groupSizeNum * pricing.pricePerPerson)}</span></div>
+              {groupSizeNum * pricing.pricePerPerson < pricing.minReserve && <div className="flex justify-between text-text-secondary text-xs italic"><span>Minimum reserve ({pricing.minPlayers} players)</span><span>{formatPence(pricing.minReserve)}</span></div>}
               {cfg.pricingFields?.filter((f) => f.mandatory).map((f) => {
                 const pence = Math.round(parseFloat(f.value || "0") * 100);
                 const amount = f.perPerson ? pence * groupSizeNum : pence;

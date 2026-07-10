@@ -22,8 +22,17 @@ export type BookingAddOn = {
   name: string;
   icon: string;
   description: string;
-  pricePP: number; // pence
+  pricePP: number; // pence (used when pricingType is "per-person")
+  priceFlat?: number; // pence (used when pricingType is "flat")
+  pricingType?: "per-person" | "flat"; // default: "per-person"
   enabled: boolean;
+};
+
+/** Per-product pricing overrides. Any field not set falls back to the global BookingConfig value. */
+export type ProductPricing = {
+  pricePerPerson?: number;
+  minPlayers?: number;
+  minReserve?: number;
 };
 
 export type TaskSectionTypeConfig = {
@@ -58,6 +67,8 @@ export type BookingConfig = {
   taskSectionTypes: TaskSectionTypeConfig[];
   productTaskSectionTypes?: Record<string, TaskSectionTypeConfig[]>;
   productGroupTypes?: Record<string, { value: string; label: string }[]>;
+  /** Per-product pricing overrides keyed by product slug */
+  productPricing?: Record<string, ProductPricing>;
   /** Admin-set event format: "in-person" or "virtual". Determines what the customer sees. */
   eventFormat?: EventFormat;
   /** For virtual events, which platform (set by admin) */

@@ -455,6 +455,7 @@ export function AdminEventsPage() {
     taskSectionTypes: DEFAULT_TASK_SECTION_TYPES as TaskSectionTypeConfig[],
     productTaskSectionTypes: {} as Record<string, TaskSectionTypeConfig[]>,
     productGroupTypes: {} as Record<string, string>,
+    productPricing: {} as Record<string, { pricePerPerson?: number; minPlayers?: number; minReserve?: number }>,
     whatsIncluded: "Professional BucketRace host\nPhysical handouts for your team\nTrophies for 1st, 2nd, and 3rd place\nA prize for first place\nDigital copy of team photos and videos",
     timeBlockingMode: "buffer",
     groupTypes: "corporate:Corporate\nhen:Hen\nbirthday:Birthday\nsten:Sten\nstag:Stag\nother:Other",
@@ -541,6 +542,7 @@ export function AdminEventsPage() {
               taskSectionTypes,
               productTaskSectionTypes,
               productGroupTypes,
+              productPricing: cfg.productPricing || {},
               whatsIncluded: (cfg.whatsIncluded || []).join("\n"),
               timeBlockingMode: cfg.timeBlockingMode || "buffer",
               groupTypes: valueLabelToText(cfg.groupTypes || DEFAULT_BOOKING_CONFIG.groupTypes),
@@ -629,6 +631,7 @@ export function AdminEventsPage() {
         durationBreakdown: bookingConfig.durationBreakdown,
         eventFormat: bookingConfig.eventFormat,
         virtualPlatforms: bookingConfig.virtualPlatforms,
+        productPricing: bookingConfig.productPricing,
       };
 
       setAutoSaveStatus("saving");
@@ -720,7 +723,7 @@ export function AdminEventsPage() {
     const id = `addon-${Date.now()}`;
     setBookingConfig({
       ...bookingConfig,
-      addOns: [...bookingConfig.addOns, { id, name: "New Add-on", icon: "FaPlus", description: "", pricePP: 0, enabled: true }],
+      addOns: [...bookingConfig.addOns, { id, name: "New Add-on", icon: "FaPlus", description: "", pricePP: 0, priceFlat: 0, pricingType: "per-person" as const, enabled: true }],
     });
     console.log("[AdminEvents] Added new add-on:", id);
   }
@@ -1020,6 +1023,11 @@ export function AdminEventsPage() {
         ),
         durationMode: bookingConfig.durationMode,
         durations: bookingConfig.durations,
+        durationDescription: bookingConfig.durationDescription,
+        durationBreakdown: bookingConfig.durationBreakdown,
+        eventFormat: bookingConfig.eventFormat,
+        virtualPlatforms: bookingConfig.virtualPlatforms,
+        productPricing: bookingConfig.productPricing,
       };
 
       // Sanitise task section types: ensure built-in IDs (location, miscellaneous, bespoke) are present in global types
@@ -3593,6 +3601,42 @@ export function AdminEventsPage() {
                                                             </div>
                                                           ))}
                                                           <button type="button" onClick={() => addPricingField("base")} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add field</button>
+                                                          {/* Per-product pricing overrides */}
+                                                          {products.length > 0 && (
+                                                            <div className="mt-3 pt-3 border-t border-gray-700">
+                                                              <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider block mb-2">Per-event overrides</label>
+                                                              <div className="space-y-2">
+                                                                {products.filter((p) => p.isActive).map((product) => {
+                                                                  const pp = bookingConfig.productPricing[product.slug] || {};
+                                                                  const hasOverride = pp.pricePerPerson != null || pp.minPlayers != null || pp.minReserve != null;
+                                                                  return (
+                                                                    <div key={product.slug} className="bg-gray-900 border border-gray-700 rounded-lg p-2">
+                                                                      <div className="flex items-center justify-between mb-1.5">
+                                                                        <span className="text-xs text-white font-medium">{product.name}</span>
+                                                                        {hasOverride && (
+                                                                          <button type="button" onClick={() => { const updated = { ...bookingConfig.productPricing }; delete updated[product.slug]; setBookingConfig({ ...bookingConfig, productPricing: updated }); }} className="text-gray-500 hover:text-red-400 transition text-[9px]">Clear</button>
+                                                                        )}
+                                                                      </div>
+                                                                      <div className="grid grid-cols-3 gap-1.5">
+                                                                        <div>
+                                                                          <label className="text-gray-500 text-[9px] block">Price/pp</label>
+                                                                          <input type="number" step="0.01" placeholder="Global" value={pp.pricePerPerson != null ? (pp.pricePerPerson / 100).toFixed(2) : ""} onChange={(e) => { const val = e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined; setBookingConfig({ ...bookingConfig, productPricing: { ...bookingConfig.productPricing, [product.slug]: { ...pp, pricePerPerson: val } } }); }} className="w-full bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                                        </div>
+                                                                        <div>
+                                                                          <label className="text-gray-500 text-[9px] block">Min players</label>
+                                                                          <input type="number" placeholder="Global" value={pp.minPlayers ?? ""} onChange={(e) => { const val = e.target.value ? parseInt(e.target.value) : undefined; setBookingConfig({ ...bookingConfig, productPricing: { ...bookingConfig.productPricing, [product.slug]: { ...pp, minPlayers: val } } }); }} className="w-full bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                                        </div>
+                                                                        <div>
+                                                                          <label className="text-gray-500 text-[9px] block">Min reserve</label>
+                                                                          <input type="number" step="0.01" placeholder="Global" value={pp.minReserve != null ? (pp.minReserve / 100).toFixed(2) : ""} onChange={(e) => { const val = e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined; setBookingConfig({ ...bookingConfig, productPricing: { ...bookingConfig.productPricing, [product.slug]: { ...pp, minReserve: val } } }); }} className="w-full bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                                        </div>
+                                                                      </div>
+                                                                    </div>
+                                                                  );
+                                                                })}
+                                                              </div>
+                                                            </div>
+                                                          )}
                                                         </div>
                                                       )}
                                                       {/* addon-pricing */}
@@ -3787,17 +3831,28 @@ export function AdminEventsPage() {
                                                       {/* addons-list */}
                                                       {fg.id === "addons-list" && (
                                                         <div className="space-y-2">
-                                                          {bookingConfig.addOns.map((addon) => (
+                                                          {bookingConfig.addOns.map((addon) => {
+                                                            const isFlat = addon.pricingType === "flat";
+                                                            return (
                                                             <div key={addon.id} className="bg-gray-900 border border-gray-700 rounded-lg p-2 space-y-1.5">
                                                               <div className="flex items-center gap-2">
                                                                 <input type="text" value={addon.name} onChange={(e) => updateAddOn(addon.id, { name: e.target.value })} className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Name" />
-                                                                <input type="number" step="0.01" value={(addon.pricePP / 100).toFixed(2)} onChange={(e) => updateAddOn(addon.id, { pricePP: Math.round(parseFloat(e.target.value || "0") * 100) })} className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" />
+                                                                <select value={addon.pricingType || "per-person"} onChange={(e) => updateAddOn(addon.id, { pricingType: e.target.value as "per-person" | "flat" })} className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none">
+                                                                  <option value="per-person">Per person</option>
+                                                                  <option value="flat">Flat fee</option>
+                                                                </select>
+                                                                {isFlat ? (
+                                                                  <input type="number" step="0.01" value={((addon.priceFlat ?? 0) / 100).toFixed(2)} onChange={(e) => updateAddOn(addon.id, { priceFlat: Math.round(parseFloat(e.target.value || "0") * 100) })} className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" title="Flat fee (pounds)" />
+                                                                ) : (
+                                                                  <input type="number" step="0.01" value={(addon.pricePP / 100).toFixed(2)} onChange={(e) => updateAddOn(addon.id, { pricePP: Math.round(parseFloat(e.target.value || "0") * 100) })} className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" title="Price per person (pounds)" />
+                                                                )}
                                                                 <button type="button" onClick={() => updateAddOn(addon.id, { enabled: !addon.enabled })} className="text-base">{addon.enabled ? <FaToggleOn className="text-emerald-400" /> : <FaToggleOff className="text-gray-600" />}</button>
                                                                 <button type="button" onClick={() => removeAddOn(addon.id)} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
                                                               </div>
                                                               <input type="text" value={addon.description} onChange={(e) => updateAddOn(addon.id, { description: e.target.value })} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Description" />
                                                             </div>
-                                                          ))}
+                                                            );
+                                                          })}
                                                           <button type="button" onClick={addNewAddOn} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add add-on</button>
                                                         </div>
                                                       )}
