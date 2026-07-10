@@ -35,7 +35,8 @@ export function calculateTotal(
   travelChargePence: number,
   config: BookingConfig,
   sectionTypes: TaskSectionTypeConfig[],
-  pricingOverride?: ProductPricing
+  pricingOverride?: ProductPricing,
+  selectedAddOns?: Record<string, boolean>
 ): number {
   const pricePerPerson = pricingOverride?.pricePerPerson ?? config.pricePerPerson;
   const minReserve = pricingOverride?.minReserve ?? config.minReserve;
@@ -46,7 +47,16 @@ export function calculateTotal(
     if (s.type === "miscellaneous" && s.miscTheme === "bespoke") extras += config.miscBespokePrice;
     extras += getTaskSectionPricePence(s.type, sectionTypes, config.bespokeSectonPrice);
   }
-  if (wantsMedals) extras += getAddOnPricePence("medals", groupSize, config);
-  if (wantsPhotoPrints) extras += getAddOnPricePence("photo-prints", groupSize, config);
+
+  // Dynamic add-ons (new approach - uses selectedAddOns map)
+  if (selectedAddOns) {
+    for (const [addonId, selected] of Object.entries(selectedAddOns)) {
+      if (selected) extras += getAddOnPricePence(addonId, groupSize, config);
+    }
+  } else {
+    // Legacy fallback for backward compat
+    if (wantsMedals) extras += getAddOnPricePence("medals", groupSize, config);
+    if (wantsPhotoPrints) extras += getAddOnPricePence("photo-prints", groupSize, config);
+  }
   return base + extras;
 }

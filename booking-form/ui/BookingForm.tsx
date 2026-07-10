@@ -82,6 +82,7 @@ export default function BookingForm({
     eventDate: "", eventTime: "", slotStartTime: "", slotEndTime: "", message: "",
     virtualPlatform: "" as "" | VirtualPlatform, venueAddress: " ",
   });
+  const [selectedAddOns, setSelectedAddOns] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitMessage, setSubmitMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -205,7 +206,7 @@ export default function BookingForm({
   const travelChargePence = travelChargeInfo.pence;
   const canInstantBook = travelChargeInfo.canInstantBook;
 
-  const totalPence = groupSizeNum > 0 ? calculateTotal(groupSizeNum, taskSections, form.wantsMedals, form.wantsPhotoPrints, travelChargePence, cfg, activeTaskSectionTypes, productPricingOverride) : 0;
+  const totalPence = groupSizeNum > 0 ? calculateTotal(groupSizeNum, taskSections, form.wantsMedals, form.wantsPhotoPrints, travelChargePence, cfg, activeTaskSectionTypes, productPricingOverride, selectedAddOns) : 0;
   const isCorporate = form.groupType === "corporate";
   const isOther = form.groupType === "other";
   const durationMinutes = form.duration ? parseFloat(form.duration) * 60 : 0;
@@ -319,7 +320,7 @@ export default function BookingForm({
     }
     // Choose Event
     if (isFieldEnabled("choose-event", "event-selector") && !form.productId) errors.event = "Please choose your event.";
-    if (isFieldEnabled("choose-event", "group-size") && groupSizeNum < pricing.minPlayers) errors["group-size"] = `Minimum group size is ${pricing.minPlayers} players.`;
+    if (isFieldEnabled("choose-event", "group-size") && groupSizeNum < 1) errors["group-size"] = "Please enter your group size.";
     if (isFieldEnabled("choose-event", "first-place-prizes") && !form.firstPlacePrize) errors["first-place-prize"] = "Please choose a first place prize.";
     // Event Format (admin-set)
     if (isFieldEnabled("choose-event", "event-format")) {
@@ -374,7 +375,7 @@ export default function BookingForm({
       }
       setFormErrors({});
       const customerName = `${form.firstName} ${form.lastName}`.trim();
-      const priceInPence = calculateTotal(groupSizeNum, taskSections, form.wantsMedals, form.wantsPhotoPrints, travelChargePence, cfg, activeTaskSectionTypes, productPricingOverride);
+      const priceInPence = calculateTotal(groupSizeNum, taskSections, form.wantsMedals, form.wantsPhotoPrints, travelChargePence, cfg, activeTaskSectionTypes, productPricingOverride, selectedAddOns);
       const payload = {
         eventTitle: selectedProduct?.name || "Booking", imageUrl: getImageUrl(selectedProduct?.coverImage) || undefined, customerEmail: form.email, customerName, customerPhone: form.phone,
         companyName: form.companyName || undefined, groupSize: groupSizeNum, eventDate: form.eventDate || undefined, priceInPence,
@@ -382,6 +383,7 @@ export default function BookingForm({
         drinkStyle: form.drinkStyle, firstPlacePrize: form.firstPlacePrize, taskSections: JSON.stringify(taskSections),
         duration: form.duration, eventTime: form.eventTime || undefined, slotStartTime: form.slotStartTime || undefined, slotEndTime: form.slotEndTime || undefined,
         wantsMedals: form.wantsMedals, wantsPhotoPrints: form.wantsPhotoPrints,
+        selectedAddOns: Object.entries(selectedAddOns).filter(([, v]) => v).map(([k]) => k),
         timeBlocking: form.timeBlocking || undefined, bufferHours: form.timeBlocking === "buffer" ? form.bufferHours : undefined,
         travelChargePence, locationSlug: locationSection?.locationSlug || undefined,
         eventFormat: cfg.eventFormat || "in-person", virtualPlatform: form.virtualPlatform || undefined,
@@ -461,7 +463,7 @@ export default function BookingForm({
           <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaUsers className="text-cta" /> Choose Your Event</h2>
           <div className="space-y-4">
             {showGroupSize && (
-              <div id="field-group-size"><label className="block text-sm font-medium text-text-primary mb-1">Group Size * <span className="font-normal text-text-secondary">(minimum {pricing.minPlayers})</span></label><div className="relative"><FaUsers className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" /><input type="number" required min={pricing.minPlayers} value={form.groupSize} onChange={(e) => { setForm({ ...form, groupSize: e.target.value }); clearError("group-size"); }} className={`w-full pl-10 pr-4 py-3 rounded-lg border ${formErrors["group-size"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder={String(pricing.minPlayers)} /></div>{formErrors["group-size"] ? <p className="text-sm text-red-600 mt-1">{formErrors["group-size"]}</p> : groupSizeNum > 0 && groupSizeNum < pricing.minPlayers && <p className="text-xs text-cta mt-1">Minimum {pricing.minPlayers} players required</p>}</div>
+              <div id="field-group-size"><label className="block text-sm font-medium text-text-primary mb-1">Group Size *</label><div className="relative"><FaUsers className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" /><input type="number" required min={1} value={form.groupSize} onChange={(e) => { setForm({ ...form, groupSize: e.target.value }); clearError("group-size"); }} className={`w-full pl-10 pr-4 py-3 rounded-lg border ${formErrors["group-size"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="How many players?" /></div>{formErrors["group-size"] ? <p className="text-sm text-red-600 mt-1">{formErrors["group-size"]}</p> : groupSizeNum > 0 && groupSizeNum < pricing.minPlayers && <p className="text-xs text-info mt-1">A minimum charge of {formatPence(pricing.minReserve)} applies (covers up to {pricing.minPlayers} players).</p>}</div>
             )}
             {showEventSel && (
               <div id="field-event"><label className="block text-sm font-medium text-text-primary mb-1">Choose Your Event *</label><select required value={form.productId} onChange={(e) => { setForm({ ...form, productId: e.target.value }); clearError("event"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.event ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition bg-white`}><option value="">Select an event...</option>{loadingProducts ? <option disabled>Loading...</option> : products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.duration ? ` (${p.duration})` : ""}</option>)}</select>{formErrors.event && <p className="text-sm text-red-600 mt-1">{formErrors.event}</p>}</div>
@@ -522,14 +524,14 @@ export default function BookingForm({
                 <h3 className="font-bold text-text-primary mb-3">What&apos;s Included</h3>
                 <ul className="space-y-2">{cfg.whatsIncluded.map((item) => (<li key={item} className="text-sm text-text-secondary flex items-start gap-2"><FaCheck className="text-success text-xs mt-1 flex-shrink-0" /><span>{item}</span></li>))}</ul>
                 {showBasePricing && (
-                  <div className="mt-4 pt-3 border-t border-border"><p className="text-sm text-text-primary font-semibold">{formatPence(pricing.pricePerPerson)} per person</p><p className="text-xs text-text-secondary mt-1">Minimum reserve: {formatPence(pricing.minReserve)} (covers {pricing.minPlayers} players). Additional players at {formatPence(pricing.pricePerPerson)} each.</p></div>
+                  <div className="mt-4 pt-3 border-t border-border"><p className="text-sm text-text-primary font-semibold">{formatPence(pricing.pricePerPerson)} per person</p><p className="text-xs text-text-secondary mt-1">Minimum charge: {formatPence(pricing.minReserve)} (covers up to {pricing.minPlayers} players). Additional players at {formatPence(pricing.pricePerPerson)} each.</p></div>
                 )}
               </div>
             )}
             {!showWhatsIncluded && showBasePricing && (
               <div className="p-4 bg-surface rounded-xl border border-border">
                 <p className="text-sm text-text-primary font-semibold">{formatPence(pricing.pricePerPerson)} per person</p>
-                <p className="text-xs text-text-secondary mt-1">Minimum reserve: {formatPence(pricing.minReserve)} (covers {pricing.minPlayers} players). Additional players at {formatPence(pricing.pricePerPerson)} each.</p>
+                <p className="text-xs text-text-secondary mt-1">Minimum charge: {formatPence(pricing.minReserve)} (covers up to {pricing.minPlayers} players). Additional players at {formatPence(pricing.pricePerPerson)} each.</p>
               </div>
             )}
             {showFirstPlacePrizes && (
@@ -735,29 +737,31 @@ export default function BookingForm({
     "add-ons": () => {
       const showAddonsList = isFieldEnabled("add-ons", "addons-list");
       if (!showAddonsList) return null;
-      // Map addon IDs to form state keys
-      const addonFormState: Record<string, { checked: boolean; toggle: (v: boolean) => void }> = {
-        medals: { checked: form.wantsMedals, toggle: (v) => setForm({ ...form, wantsMedals: v }) },
-        "photo-prints": { checked: form.wantsPhotoPrints, toggle: (v) => setForm({ ...form, wantsPhotoPrints: v }) },
-      };
-      const ADDON_ICONS: Record<string, React.ComponentType<{ className?: string }>> = { medals: FaMedal, "photo-prints": FaCamera };
+      const ADDON_ICONS: Record<string, React.ComponentType<{ className?: string }>> = { medals: FaMedal, "photo-prints": FaCamera, "bespoke-round": FaStar };
       const enabledAddOns = (cfg.addOns || []).filter((a) => a.enabled);
       return (
         <section key="add-ons">
           <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaPlus className="text-cta" /> Add-ons</h2>
           <div className="space-y-3">
             {enabledAddOns.map((addon) => {
-              const state = addonFormState[addon.id];
-              if (!state) return null;
+              const checked = selectedAddOns[addon.id] || false;
+              const toggle = (v: boolean) => {
+                setSelectedAddOns((prev) => ({ ...prev, [addon.id]: v }));
+                // Keep legacy form fields in sync for backward compat
+                if (addon.id === "medals") setForm((f) => ({ ...f, wantsMedals: v }));
+                if (addon.id === "photo-prints") setForm((f) => ({ ...f, wantsPhotoPrints: v }));
+              };
               const Icon = ADDON_ICONS[addon.id] || FaPlus;
+              const isFlat = addon.pricingType === "flat";
+              const displayPrice = isFlat ? (addon.priceFlat ?? 0) : addon.pricePP;
               return (
-                <label key={addon.id} className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${state.checked ? "border-cta bg-orange-50" : "border-border bg-white hover:border-cta/50"}`}>
-                  <input type="checkbox" checked={state.checked} onChange={(e) => state.toggle(e.target.checked)} className="sr-only" />
-                  <div className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${state.checked ? "border-cta bg-cta" : "border-border"}`}>{state.checked && <FaCheck className="text-white text-[10px]" />}</div>
+                <label key={addon.id} className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${checked ? "border-cta bg-orange-50" : "border-border bg-white hover:border-cta/50"}`}>
+                  <input type="checkbox" checked={checked} onChange={(e) => toggle(e.target.checked)} className="sr-only" />
+                  <div className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${checked ? "border-cta bg-cta" : "border-border"}`}>{checked && <FaCheck className="text-white text-[10px]" />}</div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2"><Icon className="text-highlight" /><span className="font-semibold text-text-primary">{addon.name}</span></div>
-                      <span className="font-bold text-cta">+{formatPence(addon.pricingType === "flat" ? (addon.priceFlat ?? 0) : addon.pricePP)} {addon.pricingType !== "flat" && <span className="text-sm font-normal text-text-secondary">/ person</span>}</span>
+                      <span className="font-bold text-cta">+{formatPence(displayPrice)} {!isFlat && <span className="text-sm font-normal text-text-secondary">/ person</span>}</span>
                     </div>
                     <p className="text-sm text-text-secondary mt-1">{addon.description}</p>
                   </div>
@@ -823,13 +827,13 @@ export default function BookingForm({
           return (<div key={sec.id} className="bg-surface/50 rounded-xl border border-border p-5 md:p-6">{renderer()}</div>);
         })}
 
-        {groupSizeNum >= pricing.minPlayers && (
+        {groupSizeNum > 0 && (
           <div className="p-5 bg-surface rounded-xl border border-border">
             <h3 className="font-bold text-text-primary mb-3">Booking Summary</h3>
             <div className="space-y-2 text-sm">
               {selectedProduct && <div className="flex justify-between text-text-secondary"><span>{selectedProduct.name}</span></div>}
               <div className="flex justify-between text-text-secondary"><span>{groupSizeNum} {groupSizeNum === 1 ? "player" : "players"} x {formatPence(pricing.pricePerPerson)}</span><span>{formatPence(groupSizeNum * pricing.pricePerPerson)}</span></div>
-              {groupSizeNum * pricing.pricePerPerson < pricing.minReserve && <div className="flex justify-between text-text-secondary text-xs italic"><span>Minimum reserve ({pricing.minPlayers} players)</span><span>{formatPence(pricing.minReserve)}</span></div>}
+              {groupSizeNum * pricing.pricePerPerson < pricing.minReserve && <div className="flex justify-between text-text-secondary text-xs italic"><span>Minimum charge applies (covers up to {pricing.minPlayers})</span><span>{formatPence(pricing.minReserve)}</span></div>}
               {cfg.pricingFields?.filter((f) => f.mandatory).map((f) => {
                 const pence = Math.round(parseFloat(f.value || "0") * 100);
                 const amount = f.perPerson ? pence * groupSizeNum : pence;
@@ -844,8 +848,12 @@ export default function BookingForm({
                 }
                 return null;
               })}
-              {form.wantsMedals && <div className="flex justify-between text-text-secondary"><span>Medals ({groupSizeNum} x {formatPence(cfg.medalsPricePP)})</span><span>+{formatPence(groupSizeNum * cfg.medalsPricePP)}</span></div>}
-              {form.wantsPhotoPrints && <div className="flex justify-between text-text-secondary"><span>Photos ({groupSizeNum} x {formatPence(cfg.photoPrintsPricePP)})</span><span>+{formatPence(groupSizeNum * cfg.photoPrintsPricePP)}</span></div>}
+              {(cfg.addOns || []).filter((a) => a.enabled && selectedAddOns[a.id]).map((addon) => {
+                const isFlat = addon.pricingType === "flat";
+                const addonTotal = isFlat ? (addon.priceFlat ?? 0) : groupSizeNum * addon.pricePP;
+                const label = isFlat ? addon.name : `${addon.name} (${groupSizeNum} x ${formatPence(addon.pricePP)})`;
+                return <div key={addon.id} className="flex justify-between text-text-secondary"><span>{label}</span><span>+{formatPence(addonTotal)}</span></div>;
+              })}
               {travelChargePence > 0 && <div className="flex justify-between text-text-secondary"><span>Travel charge ({travelChargeInfo.label})</span><span>+{formatPence(travelChargePence)}</span></div>}
               {!canInstantBook && <div className="flex justify-between text-amber-600 text-xs italic"><span>International location - pricing on request</span></div>}
               <div className="border-t border-border pt-2 flex justify-between font-bold text-text-primary text-lg"><span>Total</span><span className="text-cta">{canInstantBook ? formatPence(totalPence) : "On request"}</span></div>
