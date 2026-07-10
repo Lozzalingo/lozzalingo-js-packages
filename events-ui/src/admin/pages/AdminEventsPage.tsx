@@ -75,7 +75,7 @@ type ProductImage = {
   sortOrder: number;
 };
 
-type SectionType = "text" | "list" | "steps" | "bullets" | "cards" | "checklist" | "gallery" | "themes" | "venue" | "faq";
+type SectionType = "text" | "list" | "steps" | "bullets" | "cards" | "checklist" | "gallery" | "themes" | "venue" | "faq" | "video";
 
 type ProductSection = {
   id: number;
@@ -1655,7 +1655,7 @@ export function AdminEventsPage() {
       const body: Record<string, unknown> = {
         title: form.title,
         type: form.type,
-        content: form.type === "text" ? (form.content || null) : null,
+        content: (form.type === "text" || form.type === "video") ? (form.content || null) : null,
         listItems: !isSpecialType && form.type !== "text" && listItemsArray.length > 0
           ? JSON.stringify(listItemsArray)
           : null,
@@ -2708,6 +2708,7 @@ export function AdminEventsPage() {
                                     <option value="cards">Cards (categorised)</option>
                                     <option value="checklist">Checklist (task list)</option>
                                     <option value="faq">FAQ (accordion)</option>
+                                    <option value="video">Video (YouTube/Vimeo embed)</option>
                                   </select>
                                 </div>
                                 <div>
@@ -2720,10 +2721,10 @@ export function AdminEventsPage() {
                                     {form.isCollapsible ? <FaToggleOn className="text-blue-400" /> : <FaToggleOff className="text-gray-600" />}
                                   </button>
                                 </div>
-                                {form.type === "text" && (
+                                {(form.type === "text" || form.type === "video") && (
                                   <div className="md:col-span-3">
-                                    <label className="text-gray-400 text-xs block mb-1">Content (HTML)</label>
-                                    <textarea value={form.content} onChange={(e) => updateSectionForm(formKey, { content: e.target.value })} rows={5} placeholder="<p>Your content here...</p>" className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:border-blue-500 outline-none resize-none" data-action="admin_section_form_content" />
+                                    <label className="text-gray-400 text-xs block mb-1">{form.type === "video" ? "Video URL (YouTube or Vimeo)" : "Content (HTML)"}</label>
+                                    <textarea value={form.content} onChange={(e) => updateSectionForm(formKey, { content: e.target.value })} rows={form.type === "video" ? 2 : 5} placeholder={form.type === "video" ? "https://www.youtube.com/watch?v=..." : "<p>Your content here...</p>"} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:border-blue-500 outline-none resize-none" data-action="admin_section_form_content" />
                                   </div>
                                 )}
                                 {["list", "steps", "bullets", "cards", "checklist", "faq"].includes(form.type) && (
@@ -2789,6 +2790,7 @@ export function AdminEventsPage() {
                                 : section.type === "cards" ? <FaTags className="text-red-400 text-xs" />
                                 : section.type === "checklist" ? <FaCheck className="text-amber-400 text-xs" />
                                 : section.type === "faq" ? <FaListUl className="text-orange-400 text-xs" />
+                                : section.type === "video" ? <FaExternalLinkAlt className="text-pink-400 text-xs" />
                                 : <FaTags className="text-orange-400 text-xs" />;
                               const sectionBadge = section.type === "gallery" ? "bg-purple-500/20 text-purple-400"
                                 : section.type === "themes" ? "bg-yellow-500/20 text-yellow-400"
@@ -2798,6 +2800,7 @@ export function AdminEventsPage() {
                                 : section.type === "cards" ? "bg-red-500/20 text-red-400"
                                 : section.type === "checklist" ? "bg-amber-500/20 text-amber-400"
                                 : section.type === "faq" ? "bg-orange-500/20 text-orange-400"
+                                : section.type === "video" ? "bg-pink-500/20 text-pink-400"
                                 : "bg-orange-500/20 text-orange-400";
 
                               return (

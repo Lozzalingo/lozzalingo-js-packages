@@ -9,7 +9,7 @@ import { parseJson, parseThemes } from "../lib/utils";
 export type ProductSection = {
   id: number;
   title: string;
-  type: "text" | "list" | "steps" | "bullets" | "cards" | "checklist" | "gallery" | "themes" | "venue" | "faq";
+  type: "text" | "list" | "steps" | "bullets" | "cards" | "checklist" | "gallery" | "themes" | "venue" | "faq" | "video";
   content: string | null;
   listItems: string | null;
   displayOrder: number;
@@ -99,6 +99,35 @@ export function EventSections({ sections, galleryImages, themes, venue, productN
           );
         }
 
+        // Video section - YouTube/Vimeo embed
+        if (section.type === "video" && section.content) {
+          const embedUrl = toEmbedUrl(section.content.trim());
+          if (embedUrl) {
+            return (
+              <CollapsibleSection
+                key={section.id}
+                title={section.title}
+                content=""
+                defaultOpen={true}
+                isCollapsible={collapsible}
+                renderCustomContent={() => (
+                  <div className="pb-4 px-1">
+                    <div className="relative w-full overflow-hidden rounded-xl border border-border" style={{ paddingBottom: "56.25%" }}>
+                      <iframe
+                        src={embedUrl}
+                        className="absolute inset-0 w-full h-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        title={section.title}
+                      />
+                    </div>
+                  </div>
+                )}
+              />
+            );
+          }
+        }
+
         // FAQ section - render as accordion (supports type "faq" or list sections titled "FAQ")
         const isFaq = section.type === "faq" || (section.type === "list" && /^faq/i.test(section.title));
         if (isFaq && items.length > 0) {
@@ -114,8 +143,8 @@ export function EventSections({ sections, galleryImages, themes, venue, productN
           );
         }
 
-        // Skip gallery/themes/venue with no data
-        if (["gallery", "themes", "venue"].includes(section.type)) return null;
+        // Skip gallery/themes/venue/video with no data
+        if (["gallery", "themes", "venue", "video"].includes(section.type)) return null;
 
         // Standard content sections
         return (
@@ -211,6 +240,19 @@ export function EventSections({ sections, galleryImages, themes, venue, productN
       })}
     </div>
   );
+}
+
+/** Convert a YouTube or Vimeo URL to an embeddable URL */
+function toEmbedUrl(url: string): string | null {
+  // YouTube: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}`;
+  // Vimeo: vimeo.com/ID
+  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+  // Already an embed URL or other iframe src
+  if (url.startsWith("https://")) return url;
+  return null;
 }
 
 /** Accordion-style FAQ: each item is "Question - Answer" or "Question: Answer" */
