@@ -271,17 +271,17 @@ function FaqAccordion({ items }: { items: string[] }) {
         const isOpen = openIndex === i;
 
         return (
-          <div key={i} className={`rounded-lg overflow-hidden border transition-colors duration-200 ${isOpen ? "border-orange-300 bg-orange-50" : "border-border hover:border-orange-200 hover:bg-orange-50/30"}`}>
+          <div key={i} className={`rounded-lg overflow-hidden border transition-colors duration-200 ${isOpen ? "border-sky-300 bg-sky-50" : "border-border hover:border-sky-200 hover:bg-sky-50/30"}`}>
             <button
               type="button"
               onClick={() => setOpenIndex(isOpen ? null : i)}
               className="w-full flex items-center justify-between px-4 py-3.5 text-left gap-3"
             >
               <div className="flex items-center gap-3">
-                <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold flex-shrink-0 transition-colors duration-200 ${isOpen ? "bg-orange-500 text-white" : "bg-orange-100 text-orange-600"}`}>?</span>
-                <span className={`text-sm font-semibold transition-colors duration-200 ${isOpen ? "text-orange-700" : "text-text-primary"}`}>{question}</span>
+                <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold flex-shrink-0 transition-colors duration-200 ${isOpen ? "bg-sky-500 text-white" : "bg-sky-100 text-sky-600"}`}>?</span>
+                <span className={`text-sm font-semibold transition-colors duration-200 ${isOpen ? "text-sky-700" : "text-text-primary"}`}>{question}</span>
               </div>
-              <FaChevronDown className={`text-orange-400 text-xs flex-shrink-0 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
+              <FaChevronDown className={`text-sky-400 text-xs flex-shrink-0 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
             </button>
             <div className={`grid transition-all duration-300 ease-in-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
               <div className="overflow-hidden">
