@@ -169,10 +169,10 @@ export default function BookingForm({
   // Per-product pricing (falls back to global config)
   const productPricingOverride = selectedProduct?.slug ? cfg.productPricing?.[selectedProduct.slug] : undefined;
   const pricing = useMemo(() => ({
-    pricePerPerson: productPricingOverride?.pricePerPerson ?? pricing.pricePerPerson,
-    minPlayers: productPricingOverride?.minPlayers ?? pricing.minPlayers,
-    minReserve: productPricingOverride?.minReserve ?? pricing.minReserve,
-  }), [productPricingOverride, pricing.pricePerPerson, pricing.minPlayers, pricing.minReserve]);
+    pricePerPerson: productPricingOverride?.pricePerPerson ?? cfg.pricePerPerson,
+    minPlayers: productPricingOverride?.minPlayers ?? cfg.minPlayers,
+    minReserve: productPricingOverride?.minReserve ?? cfg.minReserve,
+  }), [productPricingOverride, cfg.pricePerPerson, cfg.minPlayers, cfg.minReserve]);
 
   // Per-product task section types
   const activeTaskSectionTypes = useMemo(() => {
