@@ -2,6 +2,21 @@
 
 import React, { createContext, useContext } from "react";
 
+export type CategoryFilter = {
+  /** Unique key for this filter, e.g. "quiz-shows" */
+  key: string;
+  /** Display label, e.g. "Quiz Shows" */
+  label: string;
+  /** Description shown on the filter card */
+  description?: string;
+  /** Tailwind colour class used when active, e.g. "bg-blue-500" */
+  colour?: string;
+  /** Icon name from react-icons (rendered by the consumer) */
+  icon?: React.ReactNode;
+  /** Category slug(s) to match against product.category. Array for multi-match. */
+  categories: string | string[];
+};
+
 export type EventsBrand = {
   /** Brand name, e.g. "BucketRace" */
   name: string;
@@ -37,6 +52,13 @@ export type EventsBrand = {
   allFilterDesc?: string;
   /** Categories for admin editor */
   categories?: string[];
+  /**
+   * Custom category filters for the listing page.
+   * When provided, replaces the default Private/Public filter cards.
+   * Each filter matches products by their `category` field.
+   * When omitted, the listing page falls back to Private/Public filtering.
+   */
+  categoryFilters?: CategoryFilter[];
 };
 
 export type EventsConfig = {

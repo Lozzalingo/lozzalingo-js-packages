@@ -87,6 +87,8 @@ type ProductSection = {
   isCollapsible: boolean;
 };
 
+const FORMAT_OPTIONS = ["in-person", "virtual", "outdoors", "indoors", "hybrid"] as const;
+
 type Product = {
   id: string;
   name: string;
@@ -95,6 +97,8 @@ type Product = {
   shortDesc: string | null;
   coverImage: string | null;
   category: string;
+  tags: string | null;
+  format: string | null;
   themes: string | null;
   maxGroupSize: number | null;
   venue: string | null;
@@ -116,6 +120,8 @@ type ProductForm = {
   shortDesc: string;
   coverImage: string;
   category: string;
+  tags: string[]; // category tag slugs
+  format: string;
   themes: string;
   maxGroupSize: string;
   venue: string;
@@ -149,6 +155,8 @@ const emptyProductForm: ProductForm = {
   shortDesc: "",
   coverImage: "",
   category: "scavenger-hunt",
+  tags: [],
+  format: "",
   themes: "",
   maxGroupSize: "",
   venue: "",
@@ -364,9 +372,114 @@ export function AdminEventsPage() {
   // Storage folder for event images on DigitalOcean Spaces
   const STORAGE_FOLDER = `${storageFolder}/events`;
 
-  const CATEGORIES = brand.categories || ["scavenger-hunt", "public-event", "other"];
-
+  const defaultCategories = brand.categories || ["scavenger-hunt", "public-event", "other"];
   const authHeader = adminSecret || "";
+
+  // ── Dynamic categories (loaded from settings API, falls back to brand config) ──
+  const [dynamicCategories, setDynamicCategories] = useState<string[] | null>(null);
+  const [showCategoriesManager, setShowCategoriesManager] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState("");
+  const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
+  const [renameCategoryInput, setRenameCategoryInput] = useState("");
+  const [categoriesSaving, setCategoriesSaving] = useState(false);
+
+  // Merged categories: dynamic (from API) takes priority over brand config defaults
+  const CATEGORIES = dynamicCategories || defaultCategories;
+
+  // Fetch saved categories from settings API
+  useEffect(() => {
+    fetch(`${apiBase}/api/app-settings/event_categories`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.value) {
+          try {
+            const cats = typeof data.value === "string" ? JSON.parse(data.value) : data.value;
+            if (Array.isArray(cats) && cats.length > 0) {
+              setDynamicCategories(cats);
+              console.log("[AdminEvents] Loaded dynamic categories:", cats);
+            }
+          } catch (err) {
+            console.error("[AdminEvents] Failed to parse saved categories:", err);
+          }
+        }
+      })
+      .catch((err) => console.error("[AdminEvents] Failed to fetch categories:", err));
+  }, [apiBase]);
+
+  // Save categories to settings API
+  async function saveCategories(cats: string[]) {
+    setCategoriesSaving(true);
+    try {
+      const res = await fetch(`${apiBase}/api/app-settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": authHeader },
+        body: JSON.stringify({
+          key: "event_categories",
+          value: JSON.stringify(cats),
+          category: "events",
+          description: "Event product categories",
+        }),
+      });
+      if (res.ok) {
+        setDynamicCategories(cats);
+        console.log("[AdminEvents] Categories saved:", cats);
+      } else {
+        console.error("[AdminEvents] Failed to save categories:", res.status);
+      }
+    } catch (err) {
+      console.error("[AdminEvents] Error saving categories:", err);
+    } finally {
+      setCategoriesSaving(false);
+    }
+  }
+
+  function addCategory() {
+    const slug = newCategoryInput.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    if (!slug || CATEGORIES.includes(slug)) return;
+    const updated = [...CATEGORIES, slug];
+    saveCategories(updated);
+    setNewCategoryInput("");
+    console.log("[AdminEvents] Added category:", slug);
+  }
+
+  function removeCategory(cat: string) {
+    const updated = CATEGORIES.filter((c) => c !== cat);
+    if (updated.length === 0) return; // Must keep at least one
+    saveCategories(updated);
+    console.log("[AdminEvents] Removed category:", cat);
+  }
+
+  function renameCategory(oldSlug: string) {
+    const newSlug = renameCategoryInput.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    if (!newSlug || newSlug === oldSlug || CATEGORIES.includes(newSlug)) {
+      setRenamingCategory(null);
+      return;
+    }
+    const updated = CATEGORIES.map((c) => c === oldSlug ? newSlug : c);
+    saveCategories(updated);
+    setRenamingCategory(null);
+    setRenameCategoryInput("");
+    console.log("[AdminEvents] Renamed category:", oldSlug, "->", newSlug);
+  }
+
+  function moveCategoryUp(index: number) {
+    if (index <= 0) return;
+    const updated = [...CATEGORIES];
+    [updated[index - 1], updated[index]] = [updated[index], updated[index - 1]];
+    saveCategories(updated);
+  }
+
+  function moveCategoryDown(index: number) {
+    if (index >= CATEGORIES.length - 1) return;
+    const updated = [...CATEGORIES];
+    [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
+    saveCategories(updated);
+  }
+
+  // Helper: empty product form with first available category
+  function getEmptyProductForm(): ProductForm {
+    return { ...emptyProductForm, category: CATEGORIES[0] || "other" };
+  }
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1162,6 +1275,8 @@ export function AdminEventsPage() {
           shortDesc: productForm.shortDesc || null,
           coverImage: productForm.coverImage || null,
           category: productForm.category,
+          tags: productForm.tags.length > 0 ? JSON.stringify(productForm.tags) : null,
+          format: productForm.format || null,
           maxGroupSize: productForm.maxGroupSize ? parseInt(productForm.maxGroupSize) : null,
           duration: productForm.duration || null,
           ticketLimit: productForm.ticketLimit ? parseInt(productForm.ticketLimit) : null,
@@ -1173,7 +1288,7 @@ export function AdminEventsPage() {
         console.log(`[AdminProducts] Product saved successfully`);
         setShowProductForm(false);
         setEditingProductId(null);
-        setProductForm(emptyProductForm);
+        setProductForm(getEmptyProductForm());
         if (isEditing && editingProductId) {
           refreshProduct(editingProductId);
         } else {
@@ -2065,6 +2180,16 @@ export function AdminEventsPage() {
     }));
   }
 
+  function parseTags(raw: string | null): string[] {
+    if (!raw) return [];
+    try {
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }
+
   function startEditProduct(product: Product) {
     setEditingProductId(product.id);
     setProductForm({
@@ -2074,6 +2199,8 @@ export function AdminEventsPage() {
       shortDesc: product.shortDesc || "",
       coverImage: product.coverImage || "",
       category: product.category,
+      tags: parseTags(product.tags),
+      format: product.format || "",
       themes: product.themes || "",
       maxGroupSize: product.maxGroupSize ? String(product.maxGroupSize) : "",
       venue: product.venue || "",
@@ -2118,7 +2245,7 @@ export function AdminEventsPage() {
   function cancelProductForm() {
     setShowProductForm(false);
     setEditingProductId(null);
-    setProductForm(emptyProductForm);
+    setProductForm(getEmptyProductForm());
   }
 
   function cancelPackageForm() {
@@ -2365,7 +2492,7 @@ export function AdminEventsPage() {
         <button
           onClick={() => {
             setEditingProductId(null);
-            setProductForm(emptyProductForm);
+            setProductForm(getEmptyProductForm());
             setShowProductForm(true);
           }}
           className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
@@ -2374,6 +2501,131 @@ export function AdminEventsPage() {
           <FaPlus className="text-xs" />
           Create Product
         </button>
+      </div>
+
+      {/* Categories Manager */}
+      <div className="mb-6">
+        <button
+          onClick={() => setShowCategoriesManager(!showCategoriesManager)}
+          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition"
+          data-action="admin_toggle_categories"
+        >
+          <FaTags className="text-xs" />
+          Manage Categories ({CATEGORIES.length})
+          {showCategoriesManager ? <FaChevronDown className="text-[10px]" /> : <FaChevronRight className="text-[10px]" />}
+        </button>
+
+        {showCategoriesManager && (
+          <div className="mt-3 bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-gray-300">Categories</h3>
+              {categoriesSaving && <span className="text-xs text-gray-500">Saving...</span>}
+            </div>
+
+            {/* Category list */}
+            <div className="space-y-1.5 mb-4">
+              {CATEGORIES.map((cat, idx) => (
+                <div key={cat} className="flex items-center gap-2 group">
+                  <div className="flex gap-0.5">
+                    <button
+                      onClick={() => moveCategoryUp(idx)}
+                      disabled={idx === 0}
+                      className="text-gray-600 hover:text-gray-400 disabled:opacity-20 transition p-1"
+                      data-action={`admin_category_up_${cat}`}
+                    >
+                      <FaArrowUp className="text-[9px]" />
+                    </button>
+                    <button
+                      onClick={() => moveCategoryDown(idx)}
+                      disabled={idx === CATEGORIES.length - 1}
+                      className="text-gray-600 hover:text-gray-400 disabled:opacity-20 transition p-1"
+                      data-action={`admin_category_down_${cat}`}
+                    >
+                      <FaArrowDown className="text-[9px]" />
+                    </button>
+                  </div>
+
+                  {renamingCategory === cat ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        type="text"
+                        value={renameCategoryInput}
+                        onChange={(e) => setRenameCategoryInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") renameCategory(cat); if (e.key === "Escape") setRenamingCategory(null); }}
+                        className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:border-emerald-500 outline-none"
+                        autoFocus
+                        placeholder="New category slug"
+                        data-action={`admin_category_rename_input_${cat}`}
+                      />
+                      <button
+                        onClick={() => renameCategory(cat)}
+                        className="text-emerald-400 hover:text-emerald-300 transition p-1"
+                        data-action={`admin_category_rename_save_${cat}`}
+                      >
+                        <FaCheck className="text-xs" />
+                      </button>
+                      <button
+                        onClick={() => setRenamingCategory(null)}
+                        className="text-gray-500 hover:text-gray-300 transition p-1"
+                        data-action={`admin_category_rename_cancel_${cat}`}
+                      >
+                        <FaTimes className="text-xs" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm text-white bg-gray-800 px-3 py-1.5 rounded-lg">
+                        {cat.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                        <span className="text-gray-600 text-xs ml-2">{cat}</span>
+                      </span>
+                      <button
+                        onClick={() => { setRenamingCategory(cat); setRenameCategoryInput(cat); }}
+                        className="text-gray-600 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition p-1"
+                        data-action={`admin_category_rename_${cat}`}
+                      >
+                        <FaEdit className="text-xs" />
+                      </button>
+                      <button
+                        onClick={() => removeCategory(cat)}
+                        disabled={CATEGORIES.length <= 1}
+                        className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 disabled:opacity-20 transition p-1"
+                        data-action={`admin_category_delete_${cat}`}
+                      >
+                        <FaTrash className="text-[10px]" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Add new category */}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newCategoryInput}
+                onChange={(e) => setNewCategoryInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addCategory(); }}
+                placeholder="New category name, e.g. Sports Day"
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none"
+                data-action="admin_category_new_input"
+              />
+              <button
+                onClick={addCategory}
+                disabled={!newCategoryInput.trim()}
+                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:text-gray-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition"
+                data-action="admin_category_add"
+              >
+                <FaPlus className="text-[10px]" />
+                Add
+              </button>
+            </div>
+
+            <p className="text-gray-600 text-xs mt-3">
+              Categories are used to group products. Type a name (e.g. "Sports Day") and it will be converted to a slug (e.g. "sports-day").
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Create Product Form (top-level, only for new products) */}
@@ -2398,6 +2650,44 @@ export function AdminEventsPage() {
               <label className="text-gray-400 text-xs block mb-1">Category</label>
               <select value={productForm.category} onChange={(e) => setProductForm((f) => ({ ...f, category: e.target.value }))} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none" data-action="admin_products_form_category">
                 {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-gray-400 text-xs block mb-1">Format</label>
+              <select value={productForm.format} onChange={(e) => setProductForm((f) => ({ ...f, format: e.target.value }))} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none" data-action="admin_products_form_format">
+                <option value="">No format</option>
+                {FORMAT_OPTIONS.map((f) => (
+                  <option key={f} value={f}>{f.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-gray-400 text-xs block mb-1">Tags</label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {productForm.tags.map((tag) => (
+                  <span key={tag} className="inline-flex items-center gap-1 text-xs bg-emerald-600/20 text-emerald-400 px-2.5 py-1 rounded-full">
+                    {tag.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                    <button type="button" onClick={() => setProductForm((f) => ({ ...f, tags: f.tags.filter((t) => t !== tag) }))} className="text-emerald-400/60 hover:text-white transition" data-action={`admin_products_form_tag_remove_${tag}`}>
+                      <FaTimes className="text-[8px]" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <select
+                value=""
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val && !productForm.tags.includes(val)) {
+                    setProductForm((f) => ({ ...f, tags: [...f.tags, val] }));
+                  }
+                }}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none"
+                data-action="admin_products_form_tags_add"
+              >
+                <option value="">Add a tag...</option>
+                {CATEGORIES.filter((c) => !productForm.tags.includes(c)).map((c) => (
                   <option key={c} value={c}>{c.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</option>
                 ))}
               </select>
@@ -2577,6 +2867,44 @@ export function AdminEventsPage() {
                             <label className="text-gray-400 text-xs block mb-1">Category</label>
                             <select value={productForm.category} onChange={(e) => setProductForm((f) => ({ ...f, category: e.target.value }))} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none" data-action="admin_products_form_category">
                               {CATEGORIES.map((c) => (
+                                <option key={c} value={c}>{c.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-gray-400 text-xs block mb-1">Format</label>
+                            <select value={productForm.format} onChange={(e) => setProductForm((f) => ({ ...f, format: e.target.value }))} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none" data-action="admin_products_form_format">
+                              <option value="">No format</option>
+                              {FORMAT_OPTIONS.map((f) => (
+                                <option key={f} value={f}>{f.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="text-gray-400 text-xs block mb-1">Tags</label>
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {productForm.tags.map((tag) => (
+                                <span key={tag} className="inline-flex items-center gap-1 text-xs bg-emerald-600/20 text-emerald-400 px-2.5 py-1 rounded-full">
+                                  {tag.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                                  <button type="button" onClick={() => setProductForm((f) => ({ ...f, tags: f.tags.filter((t) => t !== tag) }))} className="text-emerald-400/60 hover:text-white transition" data-action={`admin_products_form_tag_remove_${tag}`}>
+                                    <FaTimes className="text-[8px]" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val && !productForm.tags.includes(val)) {
+                                  setProductForm((f) => ({ ...f, tags: [...f.tags, val] }));
+                                }
+                              }}
+                              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none"
+                              data-action="admin_products_form_tags_add"
+                            >
+                              <option value="">Add a tag...</option>
+                              {CATEGORIES.filter((c) => !productForm.tags.includes(c)).map((c) => (
                                 <option key={c} value={c}>{c.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</option>
                               ))}
                             </select>

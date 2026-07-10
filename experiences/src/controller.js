@@ -150,6 +150,7 @@ function createExperienceController(prisma, options = {}) {
     try {
       const {
         name, slug, description, shortDesc, coverImage, category,
+        tags, format,
         themes, maxGroupSize, venue, duration, ticketLimit,
         isActive, displayOrder,
       } = req.body;
@@ -168,6 +169,8 @@ function createExperienceController(prisma, options = {}) {
           shortDesc: shortDesc || null,
           coverImage: coverImage || null,
           category: category || null,
+          tags: tags ? (typeof tags === "string" ? tags : JSON.stringify(tags)) : null,
+          format: format || null,
           themes: themes ? (typeof themes === "string" ? themes : JSON.stringify(themes)) : null,
           maxGroupSize: maxGroupSize || null,
           venue: venue ? (typeof venue === "string" ? venue : JSON.stringify(venue)) : null,
@@ -207,6 +210,7 @@ function createExperienceController(prisma, options = {}) {
       const { id } = req.params;
       const {
         name, slug, description, shortDesc, coverImage, category,
+        tags, format,
         themes, maxGroupSize, venue, duration, ticketLimit,
         isActive, displayOrder,
       } = req.body;
@@ -223,6 +227,8 @@ function createExperienceController(prisma, options = {}) {
       if (shortDesc !== undefined) data.shortDesc = shortDesc;
       if (coverImage !== undefined) data.coverImage = coverImage;
       if (category !== undefined) data.category = category;
+      if (tags !== undefined) data.tags = typeof tags === "string" ? tags : JSON.stringify(tags);
+      if (format !== undefined) data.format = format;
       if (themes !== undefined) data.themes = typeof themes === "string" ? themes : JSON.stringify(themes);
       if (maxGroupSize !== undefined) data.maxGroupSize = maxGroupSize;
       if (venue !== undefined) data.venue = typeof venue === "string" ? venue : JSON.stringify(venue);

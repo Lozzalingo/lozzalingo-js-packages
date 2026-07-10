@@ -55,6 +55,8 @@ export type Product = {
   shortDesc: string | null;
   coverImage: string | null;
   category: string | null;
+  tags: string | null;
+  format: string | null;
   themes: string | null;
   maxGroupSize: number | null;
   duration: string | null;
