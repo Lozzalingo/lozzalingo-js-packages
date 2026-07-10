@@ -471,6 +471,7 @@ export function AdminEventsPage() {
     durationDescription: DEFAULT_BOOKING_CONFIG.durationDescription || "Choose how long you'd like your event to be.",
     durationBreakdown: [...(DEFAULT_BOOKING_CONFIG.durationBreakdown || [])],
     eventFormat: DEFAULT_BOOKING_CONFIG.eventFormat || "in-person",
+    showPublicMeetingSpace: DEFAULT_BOOKING_CONFIG.showPublicMeetingSpace !== false,
     virtualPlatforms: [...(DEFAULT_BOOKING_CONFIG.virtualPlatforms || [])],
   });
   const [savingBookingConfig, setSavingBookingConfig] = useState(false);
@@ -558,6 +559,7 @@ export function AdminEventsPage() {
               durationDescription: cfg.durationDescription || DEFAULT_BOOKING_CONFIG.durationDescription || "",
               durationBreakdown: cfg.durationBreakdown || DEFAULT_BOOKING_CONFIG.durationBreakdown || [],
               eventFormat: cfg.eventFormat || DEFAULT_BOOKING_CONFIG.eventFormat || "in-person",
+              showPublicMeetingSpace: cfg.showPublicMeetingSpace !== false,
               virtualPlatforms: cfg.virtualPlatforms || DEFAULT_BOOKING_CONFIG.virtualPlatforms || [],
             });
             console.log("[AdminEvents] Loaded booking config from settings");
@@ -630,6 +632,7 @@ export function AdminEventsPage() {
         durationDescription: bookingConfig.durationDescription,
         durationBreakdown: bookingConfig.durationBreakdown,
         eventFormat: bookingConfig.eventFormat,
+        showPublicMeetingSpace: bookingConfig.showPublicMeetingSpace,
         virtualPlatforms: bookingConfig.virtualPlatforms,
         productPricing: bookingConfig.productPricing,
       };
@@ -1026,6 +1029,7 @@ export function AdminEventsPage() {
         durationDescription: bookingConfig.durationDescription,
         durationBreakdown: bookingConfig.durationBreakdown,
         eventFormat: bookingConfig.eventFormat,
+        showPublicMeetingSpace: bookingConfig.showPublicMeetingSpace,
         virtualPlatforms: bookingConfig.virtualPlatforms,
         productPricing: bookingConfig.productPricing,
       };
@@ -3551,16 +3555,22 @@ export function AdminEventsPage() {
                                                       {fg.id === "event-format" && (
                                                         <div className="space-y-3">
                                                           <div>
-                                                            <label className="text-[10px] text-gray-400 font-semibold mb-1 block">Format</label>
-                                                            <div className="grid grid-cols-2 gap-2">
-                                                              {[{ value: "in-person", label: "In Person", desc: "Customer enters venue address" }, { value: "virtual", label: "Virtual", desc: "Customer picks Zoom or Teams" }].map((mode) => (
+                                                            <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mb-1 block">Default Format</label>
+                                                            <div className="grid grid-cols-3 gap-2">
+                                                              {[{ value: "in-person", label: "In Person", desc: "Venue address only" }, { value: "virtual", label: "Virtual", desc: "Zoom or Teams" }, { value: "customer-choice", label: "Customer Picks", desc: "In Person or Virtual" }].map((mode) => (
                                                                 <button key={mode.value} type="button" onClick={() => setBookingConfig({ ...bookingConfig, eventFormat: mode.value })} className={`p-2 rounded-lg border text-center transition text-xs ${bookingConfig.eventFormat === mode.value ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-600"}`}>
                                                                   <span className="block font-semibold">{mode.label}</span><span className="block text-[9px] text-gray-500 mt-0.5">{mode.desc}</span>
                                                                 </button>
                                                               ))}
                                                             </div>
                                                           </div>
-                                                          {bookingConfig.eventFormat === "virtual" && (
+                                                          <div>
+                                                            <label className="text-[10px] text-gray-400 font-semibold mb-1 flex items-center gap-1 cursor-pointer" onClick={() => setBookingConfig({ ...bookingConfig, showPublicMeetingSpace: !(bookingConfig.showPublicMeetingSpace !== false) })}>
+                                                              {bookingConfig.showPublicMeetingSpace !== false ? <FaToggleOn className="text-emerald-400 text-sm" /> : <FaToggleOff className="text-gray-600 text-sm" />}
+                                                              Show "Public Meeting Space" option (in-person)
+                                                            </label>
+                                                          </div>
+                                                          {(bookingConfig.eventFormat === "virtual" || bookingConfig.eventFormat === "customer-choice") && (
                                                             <div>
                                                               <label className="text-[10px] text-gray-400 font-semibold mb-1 block">Virtual Platforms</label>
                                                               {(bookingConfig.virtualPlatforms || []).map((vp: { value: string; label: string }, i: number) => (
@@ -3571,6 +3581,29 @@ export function AdminEventsPage() {
                                                                 </div>
                                                               ))}
                                                               <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, virtualPlatforms: [...(bookingConfig.virtualPlatforms || []), { value: "new-platform", label: "New Platform" }] })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add platform</button>
+                                                            </div>
+                                                          )}
+                                                          {/* Per-product event format overrides */}
+                                                          {products.length > 0 && (
+                                                            <div className="pt-3 border-t border-gray-700">
+                                                              <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wider block mb-2">Per-event overrides</label>
+                                                              <div className="space-y-1.5">
+                                                                {products.filter((p) => p.isActive).map((product) => {
+                                                                  const pp = bookingConfig.productPricing[product.slug] || {};
+                                                                  return (
+                                                                    <div key={product.slug} className="flex items-center gap-2">
+                                                                      <span className="text-xs text-white flex-1 truncate">{product.name}</span>
+                                                                      <select value={pp.eventFormat || ""} onChange={(e) => { const val = e.target.value || undefined; setBookingConfig({ ...bookingConfig, productPricing: { ...bookingConfig.productPricing, [product.slug]: { ...pp, eventFormat: val } } }); }} className="bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-[10px] text-white focus:border-emerald-500 outline-none">
+                                                                        <option value="">Default</option>
+                                                                        <option value="in-person">In Person</option>
+                                                                        <option value="virtual">Virtual</option>
+                                                                        <option value="customer-choice">Customer Picks</option>
+                                                                      </select>
+                                                                      <button type="button" onClick={() => { const val = !(pp.showPublicMeetingSpace !== false); setBookingConfig({ ...bookingConfig, productPricing: { ...bookingConfig.productPricing, [product.slug]: { ...pp, showPublicMeetingSpace: val } } }); }} className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${pp.showPublicMeetingSpace !== false ? "bg-emerald-500/20 text-emerald-400" : "bg-gray-700 text-gray-500"}`} title="Show public meeting space option">PMS</button>
+                                                                    </div>
+                                                                  );
+                                                                })}
+                                                              </div>
                                                             </div>
                                                           )}
                                                         </div>

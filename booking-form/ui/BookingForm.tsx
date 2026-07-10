@@ -83,6 +83,7 @@ export default function BookingForm({
     virtualPlatform: "" as "" | VirtualPlatform, venueAddress: " ",
   });
   const [selectedAddOns, setSelectedAddOns] = useState<Record<string, boolean>>({});
+  const [customerFormatChoice, setCustomerFormatChoice] = useState<"in-person" | "virtual">("in-person");
   const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitMessage, setSubmitMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -175,6 +176,12 @@ export default function BookingForm({
     minReserve: productPricingOverride?.minReserve ?? cfg.minReserve,
   }), [productPricingOverride, cfg.pricePerPerson, cfg.minPlayers, cfg.minReserve]);
 
+  // Per-product event format and venue options
+  const resolvedEventFormat: EventFormat = productPricingOverride?.eventFormat ?? cfg.eventFormat ?? "in-person";
+  const resolvedShowPublicMeetingSpace = productPricingOverride?.showPublicMeetingSpace ?? cfg.showPublicMeetingSpace ?? true;
+  // The effective format the customer form uses: if admin chose "customer-choice", use the customer's selection
+  const effectiveFormat: "in-person" | "virtual" = resolvedEventFormat === "customer-choice" ? customerFormatChoice : (resolvedEventFormat === "virtual" ? "virtual" : "in-person");
+
   // Per-product task section types
   const activeTaskSectionTypes = useMemo(() => {
     if (selectedProduct?.slug && cfg.productTaskSectionTypes?.[selectedProduct.slug]) {
@@ -190,6 +197,12 @@ export default function BookingForm({
     }
     return cfg.groupTypes;
   }, [selectedProduct?.slug, cfg]);
+
+  // Reset event format fields when product changes
+  useEffect(() => {
+    setCustomerFormatChoice("in-person");
+    setForm((prev) => ({ ...prev, virtualPlatform: "" as "" | VirtualPlatform, venueAddress: " " }));
+  }, [selectedProduct?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Travel charge from location section
   const locationSection = taskSections.find((s) => s.type === "location");
@@ -322,14 +335,22 @@ export default function BookingForm({
     if (isFieldEnabled("choose-event", "event-selector") && !form.productId) errors.event = "Please choose your event.";
     if (isFieldEnabled("choose-event", "group-size") && groupSizeNum < 1) errors["group-size"] = "Please enter your group size.";
     if (isFieldEnabled("choose-event", "first-place-prizes") && !form.firstPlacePrize) errors["first-place-prize"] = "Please choose a first place prize.";
-    // Event Format (admin-set)
+    // Event Format
     if (isFieldEnabled("choose-event", "event-format")) {
-      if (cfg.eventFormat === "virtual" && !form.virtualPlatform) errors["virtual-platform"] = "Please choose a platform.";
-      if (cfg.eventFormat !== "virtual") {
-        if (!form.venueAddress || form.venueAddress === "") {
-          errors["venue-address"] = "Please choose a venue option.";
-        } else if (form.venueAddress !== "__public__" && !form.venueAddress.trim()) {
-          errors["venue-address"] = "Please enter your venue address.";
+      if (effectiveFormat === "virtual" && !form.virtualPlatform) errors["virtual-platform"] = "Please choose a platform.";
+      if (effectiveFormat === "in-person") {
+        if (resolvedShowPublicMeetingSpace) {
+          // With public meeting space option: must pick one
+          if (!form.venueAddress || form.venueAddress === "") {
+            errors["venue-address"] = "Please choose a venue option.";
+          } else if (form.venueAddress !== "__public__" && !form.venueAddress.trim()) {
+            errors["venue-address"] = "Please enter your venue address.";
+          }
+        } else {
+          // No public meeting space: must enter address
+          if (!form.venueAddress?.trim()) {
+            errors["venue-address"] = "Please enter your venue address.";
+          }
         }
       }
     }
@@ -386,7 +407,7 @@ export default function BookingForm({
         selectedAddOns: Object.entries(selectedAddOns).filter(([, v]) => v).map(([k]) => k),
         timeBlocking: form.timeBlocking || undefined, bufferHours: form.timeBlocking === "buffer" ? form.bufferHours : undefined,
         travelChargePence, locationSlug: locationSection?.locationSlug || undefined,
-        eventFormat: cfg.eventFormat || "in-person", virtualPlatform: form.virtualPlatform || undefined,
+        eventFormat: effectiveFormat, virtualPlatform: form.virtualPlatform || undefined,
         venueAddress: form.venueAddress === "__public__" ? "Public Meeting Space" : (form.venueAddress?.trim() || undefined),
       };
 
@@ -468,55 +489,83 @@ export default function BookingForm({
             {showEventSel && (
               <div id="field-event"><label className="block text-sm font-medium text-text-primary mb-1">Choose Your Event *</label><select required value={form.productId} onChange={(e) => { setForm({ ...form, productId: e.target.value }); clearError("event"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.event ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition bg-white`}><option value="">Select an event...</option>{loadingProducts ? <option disabled>Loading...</option> : products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.duration ? ` (${p.duration})` : ""}</option>)}</select>{formErrors.event && <p className="text-sm text-red-600 mt-1">{formErrors.event}</p>}</div>
             )}
-            {isFieldEnabled("choose-event", "event-format") && cfg.eventFormat === "virtual" && (
-              <div id="field-virtual-platform">
-                <div className="flex items-center gap-2 mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <FaVideo className="text-blue-600 flex-shrink-0" />
-                  <span className="text-sm font-medium text-blue-800">This is a virtual event</span>
-                </div>
-                <label className="block text-sm font-medium text-text-primary mb-2">Which platform will you be using? *</label>
-                <div className={`grid grid-cols-2 gap-2 ${formErrors["virtual-platform"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>
-                  {(cfg.virtualPlatforms || DEFAULT_BOOKING_CONFIG.virtualPlatforms || []).map((vp) => (
-                    <label key={vp.value} className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.virtualPlatform === vp.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
-                      <input type="radio" name="virtualPlatform" value={vp.value} checked={form.virtualPlatform === vp.value} onChange={(e) => { setForm({ ...form, virtualPlatform: e.target.value as VirtualPlatform }); clearError("virtual-platform"); }} className="sr-only" />
-                      <FaLaptop className="text-sm" />{vp.label}
-                    </label>
-                  ))}
-                </div>
-                {formErrors["virtual-platform"] && <p className="text-sm text-red-600 mt-1">{formErrors["virtual-platform"]}</p>}
-              </div>
-            )}
-            {isFieldEnabled("choose-event", "event-format") && cfg.eventFormat !== "virtual" && (
-              <div id="field-venue-address">
-                <label className="block text-sm font-medium text-text-primary mb-2">Where will you be meeting? *</label>
-                <div className={`grid grid-cols-2 gap-2 ${formErrors["venue-address"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>
-                  <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress !== "__public__" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
-                    <input type="radio" name="venueType" checked={form.venueAddress !== "__public__"} onChange={() => { setForm({ ...form, venueAddress: " " }); clearError("venue-address"); }} className="sr-only" />
-                    <FaBuilding className="text-sm" />Our Own Venue
-                  </label>
-                  <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress === "__public__" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
-                    <input type="radio" name="venueType" checked={form.venueAddress === "__public__"} onChange={() => { setForm({ ...form, venueAddress: "__public__" }); clearError("venue-address"); }} className="sr-only" />
-                    <FaMapMarkerAlt className="text-sm" />Public Meeting Space
-                  </label>
-                </div>
-                {form.venueAddress !== "" && form.venueAddress !== "__public__" && (
-                  <div className="mt-3 animate-fade-in">
-                    <label className="block text-sm font-medium text-text-primary mb-1"><FaMapMarkerAlt className="inline mr-1 text-text-secondary" />Venue Address *</label>
-                    <div className="relative" ref={suggestionsRef}>
-                      <input type="text" value={form.venueAddress.trim() === "" ? "" : form.venueAddress} onChange={(e) => { setForm({ ...form, venueAddress: e.target.value }); clearError("venue-address"); searchAddress(e.target.value); }} onFocus={() => { if (addressSuggestions.length > 0) setShowSuggestions(true); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["venue-address"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Start typing an address..." autoComplete="off" />
-                      {showSuggestions && addressSuggestions.length > 0 && (
-                        <div className="absolute z-50 w-full mt-1 bg-white border border-border rounded-lg shadow-lg overflow-hidden">
-                          {addressSuggestions.map((s, i) => (
-                            <button key={i} type="button" className="w-full text-left px-4 py-3 text-sm text-text-primary hover:bg-surface transition flex items-start gap-2 border-b border-border last:border-0" onClick={() => { setForm((prev) => ({ ...prev, venueAddress: s.label })); setShowSuggestions(false); clearError("venue-address"); console.log("[BookingForm] Address selected:", s.label); }}>
-                              <FaMapMarkerAlt className="text-text-secondary mt-0.5 flex-shrink-0" /><span>{s.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
+            {isFieldEnabled("choose-event", "event-format") && (
+              <div id="field-event-format" className="space-y-3">
+                {/* Customer choice toggle - only when admin sets "customer-choice" */}
+                {resolvedEventFormat === "customer-choice" && (
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">How would you like to attend? *</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${customerFormatChoice === "in-person" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
+                        <input type="radio" name="customerFormat" value="in-person" checked={customerFormatChoice === "in-person"} onChange={() => { setCustomerFormatChoice("in-person"); setForm((prev) => ({ ...prev, virtualPlatform: "" as "" | VirtualPlatform, venueAddress: " " })); clearError("virtual-platform"); clearError("venue-address"); }} className="sr-only" />
+                        <FaMapMarkerAlt className="text-sm" />In Person
+                      </label>
+                      <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${customerFormatChoice === "virtual" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
+                        <input type="radio" name="customerFormat" value="virtual" checked={customerFormatChoice === "virtual"} onChange={() => { setCustomerFormatChoice("virtual"); setForm((prev) => ({ ...prev, venueAddress: "", virtualPlatform: "" as "" | VirtualPlatform })); clearError("virtual-platform"); clearError("venue-address"); }} className="sr-only" />
+                        <FaVideo className="text-sm" />Virtual
+                      </label>
                     </div>
                   </div>
                 )}
-                {formErrors["venue-address"] && <p className="text-sm text-red-600 mt-1">{formErrors["venue-address"]}</p>}
+                {/* Virtual: platform picker */}
+                {effectiveFormat === "virtual" && (
+                  <div id="field-virtual-platform">
+                    {resolvedEventFormat !== "customer-choice" && (
+                      <div className="flex items-center gap-2 mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <FaVideo className="text-blue-600 flex-shrink-0" />
+                        <span className="text-sm font-medium text-blue-800">This is a virtual event</span>
+                      </div>
+                    )}
+                    <label className="block text-sm font-medium text-text-primary mb-2">Which platform will you be using? *</label>
+                    <div className={`grid grid-cols-2 gap-2 ${formErrors["virtual-platform"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>
+                      {(cfg.virtualPlatforms || DEFAULT_BOOKING_CONFIG.virtualPlatforms || []).map((vp) => (
+                        <label key={vp.value} className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.virtualPlatform === vp.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
+                          <input type="radio" name="virtualPlatform" value={vp.value} checked={form.virtualPlatform === vp.value} onChange={(e) => { setForm({ ...form, virtualPlatform: e.target.value as VirtualPlatform }); clearError("virtual-platform"); }} className="sr-only" />
+                          <FaLaptop className="text-sm" />{vp.label}
+                        </label>
+                      ))}
+                    </div>
+                    {formErrors["virtual-platform"] && <p className="text-sm text-red-600 mt-1">{formErrors["virtual-platform"]}</p>}
+                  </div>
+                )}
+                {/* In-person: venue options */}
+                {effectiveFormat === "in-person" && (
+                  <div id="field-venue-address">
+                    <label className="block text-sm font-medium text-text-primary mb-2">{resolvedShowPublicMeetingSpace ? "Where will you be meeting? *" : "Venue Address *"}</label>
+                    {/* Two-option picker: only when public meeting space is enabled */}
+                    {resolvedShowPublicMeetingSpace && (
+                      <div className={`grid grid-cols-2 gap-2 ${formErrors["venue-address"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>
+                        <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress !== "__public__" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
+                          <input type="radio" name="venueType" checked={form.venueAddress !== "__public__"} onChange={() => { setForm({ ...form, venueAddress: " " }); clearError("venue-address"); }} className="sr-only" />
+                          <FaBuilding className="text-sm" />Our Own Venue
+                        </label>
+                        <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress === "__public__" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
+                          <input type="radio" name="venueType" checked={form.venueAddress === "__public__"} onChange={() => { setForm({ ...form, venueAddress: "__public__" }); clearError("venue-address"); }} className="sr-only" />
+                          <FaMapMarkerAlt className="text-sm" />Public Meeting Space
+                        </label>
+                      </div>
+                    )}
+                    {/* Address input: show when "Our Own Venue" is selected, or always when no public option */}
+                    {(form.venueAddress !== "__public__" && (resolvedShowPublicMeetingSpace ? form.venueAddress !== "" : true)) && (
+                      <div className={resolvedShowPublicMeetingSpace ? "mt-3 animate-fade-in" : ""}>
+                        {resolvedShowPublicMeetingSpace && <label className="block text-sm font-medium text-text-primary mb-1"><FaMapMarkerAlt className="inline mr-1 text-text-secondary" />Venue Address *</label>}
+                        <div className="relative" ref={suggestionsRef}>
+                          <input type="text" value={form.venueAddress.trim() === "" ? "" : form.venueAddress} onChange={(e) => { setForm({ ...form, venueAddress: e.target.value }); clearError("venue-address"); searchAddress(e.target.value); }} onFocus={() => { if (addressSuggestions.length > 0) setShowSuggestions(true); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["venue-address"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Start typing an address..." autoComplete="off" />
+                          {showSuggestions && addressSuggestions.length > 0 && (
+                            <div className="absolute z-50 w-full mt-1 bg-white border border-border rounded-lg shadow-lg overflow-hidden">
+                              {addressSuggestions.map((s, i) => (
+                                <button key={i} type="button" className="w-full text-left px-4 py-3 text-sm text-text-primary hover:bg-surface transition flex items-start gap-2 border-b border-border last:border-0" onClick={() => { setForm((prev) => ({ ...prev, venueAddress: s.label })); setShowSuggestions(false); clearError("venue-address"); console.log("[BookingForm] Address selected:", s.label); }}>
+                                  <FaMapMarkerAlt className="text-text-secondary mt-0.5 flex-shrink-0" /><span>{s.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {formErrors["venue-address"] && <p className="text-sm text-red-600 mt-1">{formErrors["venue-address"]}</p>}
+                  </div>
+                )}
               </div>
             )}
             {showWhatsIncluded && (

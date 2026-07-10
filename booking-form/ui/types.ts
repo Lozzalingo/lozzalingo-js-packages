@@ -28,11 +28,13 @@ export type BookingAddOn = {
   enabled: boolean;
 };
 
-/** Per-product pricing overrides. Any field not set falls back to the global BookingConfig value. */
+/** Per-product overrides. Any field not set falls back to the global BookingConfig value. */
 export type ProductPricing = {
   pricePerPerson?: number;
   minPlayers?: number;
   minReserve?: number;
+  eventFormat?: EventFormat;
+  showPublicMeetingSpace?: boolean;
 };
 
 export type TaskSectionTypeConfig = {
@@ -69,8 +71,10 @@ export type BookingConfig = {
   productGroupTypes?: Record<string, { value: string; label: string }[]>;
   /** Per-product pricing overrides keyed by product slug */
   productPricing?: Record<string, ProductPricing>;
-  /** Admin-set event format: "in-person" or "virtual". Determines what the customer sees. */
+  /** Event format: "in-person", "virtual", or "customer-choice". Determines what the customer sees. */
   eventFormat?: EventFormat;
+  /** Whether to show "Public Meeting Space" as an in-person venue option (default true) */
+  showPublicMeetingSpace?: boolean;
   /** For virtual events, which platform (set by admin) */
   virtualPlatform?: VirtualPlatform;
   virtualPlatforms?: { value: VirtualPlatform; label: string }[];
@@ -79,7 +83,7 @@ export type BookingConfig = {
   pricingFields?: { id: string; label: string; value: string; category: "base" | "addon"; perPerson: boolean; mandatory?: boolean; pricingType?: "fixed" | "per-person" }[];
 };
 
-export type EventFormat = "in-person" | "virtual";
+export type EventFormat = "in-person" | "virtual" | "customer-choice";
 export type VirtualPlatform = "zoom" | "microsoft-teams";
 
 export type TaskSectionType = "location" | "miscellaneous" | "bespoke";

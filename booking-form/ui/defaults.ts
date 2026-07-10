@@ -122,6 +122,7 @@ export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
     { id: "bespoke", label: "Personalised", description: "Custom tasks tailored to you", enabled: true, pricePounds: "30.00" },
   ],
   eventFormat: "in-person" as const,
+  showPublicMeetingSpace: true,
   virtualPlatforms: [
     { value: "zoom", label: "Zoom" },
     { value: "microsoft-teams", label: "Microsoft Teams" },
