@@ -311,9 +311,6 @@ class Lozzalingo {
     // External API
     this._registerExternalApi();
 
-    // CRM
-    this._registerCrm();
-
     // Optional features
     this._registerAnalytics();
     this._registerMerchandise();
@@ -497,56 +494,13 @@ class Lozzalingo {
     });
   }
 
-  _registerCrm() {
-    if (!this.isEnabled("crm")) return;
-    this._tryRegister("crm", () => {
-      const { createCrmRoutes, createCrmController } = require("@lozzalingo/crm");
-
-      // Determine campaign model names (FBQ uses CrmCampaign to avoid clash)
-      const campaignModel = this.config.crm?.campaignModel || "campaign";
-      const campaignSendModel = this.config.crm?.campaignSendModel || "campaignSend";
-
-      this.controllers.crm = createCrmController(this.prisma, {
-        customerPrefix: this.config.crm?.customerPrefix || this.config.bookings?.brandPrefix || "LZ",
-        scoring: this.config.crm?.scoring,
-        campaignModel,
-        campaignSendModel,
-      });
-
-      this.app.use(
-        this.config.routes.crm,
-        createCrmRoutes(this.prisma, {
-          authMiddleware: this._adminMiddleware,
-          customerPrefix: this.config.crm?.customerPrefix || this.config.bookings?.brandPrefix || "LZ",
-          scoring: this.config.crm?.scoring,
-          campaignModel,
-          campaignSendModel,
-        })
-      );
-    });
-  }
-
   _registerAnalytics() {
     if (!this.isEnabled("analytics")) return;
     this._tryRegister("analytics", () => {
-      const { createVisitorRoutes } = require("@lozzalingo/analytics/server");
-      const analyticsPath = this.config.routes.analytics || "/api/visitors";
-
-      this.app.use(
-        analyticsPath,
-        createVisitorRoutes(this.prisma, {
-          siteDomain: this.config.site.baseUrl
-            ? this.config.site.baseUrl.replace(/^https?:\/\//, "")
-            : "localhost",
-          features: {
-            ecommerce: this.isEnabled("merchandise") || this.isEnabled("orders"),
-          },
-        })
-      );
-
-      // Store reference so Socket.IO can emit newVisitorAdded events
-      this.app.set("analyticsPath", analyticsPath);
+      // Analytics has both client and server components
+      const analyticsPath = this.config.routes.analytics || "/api/analytics";
       console.log("[Core] Analytics registered at", analyticsPath);
+      // Site-specific analytics setup can be done via lz.app
     });
   }
 
@@ -1039,6 +993,7 @@ class Lozzalingo {
               hostedInvoiceUrl: invoice.hosted_invoice_url,
               customerEmail: adminEmail,
               productName,
+              lineItems,
             });
 
             console.log(`[Bookings] Test invoice ${invoice.number} sent to ${adminEmail} - ${invoice.hosted_invoice_url}`);
@@ -1083,6 +1038,7 @@ class Lozzalingo {
             hostedInvoiceUrl: invoice.hosted_invoice_url,
             customerEmail: booking.customerEmail,
             productName,
+            lineItems,
           });
 
           console.log(`[Bookings] Invoice ${invoice.number} sent to ${booking.customerEmail} - ${invoice.hosted_invoice_url}`);
@@ -1094,79 +1050,6 @@ class Lozzalingo {
           };
         },
       });
-    }
-
-    // Wire bookings -> CRM (if both enabled)
-    if (this.controllers.booking && this.controllers.crm) {
-      console.log("[Core] Wiring bookings -> CRM hooks");
-
-      const crm = this.controllers.crm;
-
-      // Wrap onCreated to also record CRM activity
-      const originalOnCreated = this._bookingHooks.onCreated;
-      this._bookingHooks.onCreated = async (booking) => {
-        // Fire original hook first (calendar + outreach)
-        if (originalOnCreated) await originalOnCreated(booking);
-
-        // CRM: record ENQUIRY activity
-        try {
-          if (booking.customerId) {
-            await crm.recordActivity(booking.customerId, {
-              type: "ENQUIRY",
-              source: booking.source || "website",
-              productRef: booking.productId || null,
-              productModel: "Product",
-              groupType: booking.groupType || null,
-              teamName: booking.teamName || null,
-              eventDate: booking.eventDate || null,
-              location: booking.locationName || null,
-            });
-            await crm.recalculateScore(booking.customerId);
-          }
-        } catch (crmErr) {
-          console.error("[CRM] Failed to record booking created activity:", crmErr.message);
-        }
-      };
-
-      // Wrap onStatusChanged to record COMPLETED activity and update cached counts
-      const originalOnStatusChanged = this._bookingHooks.onStatusChanged;
-      this._bookingHooks.onStatusChanged = async (booking, oldStatus) => {
-        if (originalOnStatusChanged) await originalOnStatusChanged(booking, oldStatus);
-
-        try {
-          if (booking.customerId && booking.status === "COMPLETED" && oldStatus !== "COMPLETED") {
-            await crm.recordActivity(booking.customerId, {
-              type: "GAME_PLAYED",
-              source: booking.source || "website",
-              productRef: booking.productId || null,
-              productModel: "Product",
-              groupType: booking.groupType || null,
-              eventDate: booking.eventDate || null,
-              location: booking.locationName || null,
-            });
-
-            // Update cached totalBookings on customer
-            await this.prisma.customer.update({
-              where: { id: booking.customerId },
-              data: { totalBookings: { increment: 1 } },
-            });
-
-            await crm.recalculateScore(booking.customerId);
-            console.log("[CRM] Recorded COMPLETED activity for customer", booking.customerId);
-          } else if (booking.customerId) {
-            await crm.recalculateScore(booking.customerId);
-          }
-        } catch (crmErr) {
-          console.error("[CRM] Failed to record status change activity:", crmErr.message);
-        }
-      };
-    }
-
-    // Wire visitor tracking -> CRM fingerprint matching (if CRM enabled)
-    if (this.controllers.crm && this.isEnabled("analytics")) {
-      console.log("[Core] CRM fingerprint matching enabled for visitor tracking");
-      // Fingerprint matching is handled in the analytics visitors controller
-      // via a lightweight check after each page view. See visitors.controller.js.
     }
   }
 

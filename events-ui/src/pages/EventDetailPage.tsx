@@ -186,7 +186,7 @@ export function EventDetailPage({ slug: slugProp, renderPrivateBookingForm, slug
         {imageSrc ? (
           <img src={imageSrc} alt={product.name} className="w-full h-full object-cover brightness-75" />
         ) : (
-          <div className={`w-full h-full flex items-center justify-center ${isPublicEvent ? "bg-gradient-to-br from-emerald-400 to-emerald-600" : "bg-gradient-to-br from-orange-400 to-orange-600"}`}>
+          <div className={`w-full h-full flex items-center justify-center ${isPublicEvent ? "bg-gradient-to-br from-emerald-400 to-emerald-600" : "bg-gradient-to-br from-primary to-primary-dark"}`}>
             {isPublicEvent ? <FaTicketAlt className="text-8xl text-white/30" /> : <FaMapMarkerAlt className="text-8xl text-white/30" />}
           </div>
         )}
@@ -221,7 +221,7 @@ export function EventDetailPage({ slug: slugProp, renderPrivateBookingForm, slug
             {!hasThemesSection && themes.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-4">
                 {themes.map((theme) => (
-                  <span key={theme} className="inline-flex items-center bg-orange-50 text-orange-700 border border-orange-200 px-3 py-1 rounded-full text-xs font-medium">{theme}</span>
+                  <span key={theme} className="inline-flex items-center bg-primary/10 text-primary border border-primary/20 px-3 py-1 rounded-full text-xs font-medium">{theme}</span>
                 ))}
               </div>
             )}
@@ -258,7 +258,7 @@ export function EventDetailPage({ slug: slugProp, renderPrivateBookingForm, slug
                 <button type="button" onClick={() => setBookingMode("public")} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 font-bold text-sm transition ${bookingMode === "public" ? "bg-emerald-500 text-white" : "bg-gray-50 text-text-secondary hover:bg-gray-100"}`} data-action="toggle_public_booking">
                   <FaTicketAlt /> Buy Public Tickets
                 </button>
-                <button type="button" onClick={() => setBookingMode("private")} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 font-bold text-sm transition ${bookingMode === "private" ? "bg-orange-500 text-white" : "bg-gray-50 text-text-secondary hover:bg-gray-100"}`} data-action="toggle_private_booking">
+                <button type="button" onClick={() => setBookingMode("private")} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 font-bold text-sm transition ${bookingMode === "private" ? "bg-primary text-white" : "bg-gray-50 text-text-secondary hover:bg-gray-100"}`} data-action="toggle_private_booking">
                   <FaLock /> Book Private Event
                 </button>
               </div>

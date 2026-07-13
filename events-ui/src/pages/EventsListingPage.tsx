@@ -30,6 +30,15 @@ const FORMAT_OPTIONS: { value: string; label: string; icon: React.ReactNode }[] 
   { value: "hybrid", label: "Hybrid", icon: <FaExchangeAlt /> },
 ];
 
+/** Check whether a product matches a format filter.
+ *  Products with format "customer-choice" match both "in-person" and "virtual". */
+function matchesFormat(product: Product, fmt: string): boolean {
+  if (!product.format) return false;
+  if (product.format === fmt) return true;
+  if (product.format === "customer-choice" && (fmt === "in-person" || fmt === "virtual")) return true;
+  return false;
+}
+
 /** Check whether a product matches a category filter */
 function matchesFilter(product: Product, cf: CategoryFilter): boolean {
   const cats = Array.isArray(cf.categories) ? cf.categories : [cf.categories];
@@ -83,7 +92,7 @@ function ProductCard({
         )}
         {!isPublic && product.format && (
           <span className="absolute top-3 left-3 bg-black/60 text-white text-xs px-2 py-1 rounded-full capitalize">
-            {product.format}
+            {product.format === "customer-choice" ? "In-Person / Virtual" : product.format}
           </span>
         )}
       </div>
@@ -132,68 +141,80 @@ export function EventsListingPage() {
   const { cdnBase, storageFolder, brand } = useEventsConfig();
   const { products, loading } = useProducts();
   const [filter, setFilter] = useState<string>("all");
+  const [accessFilter, setAccessFilter] = useState<string | null>(null); // "private" | "public" | null
   const [formatFilter, setFormatFilter] = useState<string | null>(null);
 
   const hasCategoryFilters = brand.categoryFilters && brand.categoryFilters.length > 0;
 
-  // Category-mode: compute counts and filtered products per custom filter
+  // Private vs public split
+  const privateProducts = products.filter((p) => p.category !== "public-event");
+  const publicProducts = products.filter((p) => p.category === "public-event");
+  const hasPublicProducts = publicProducts.length > 0;
+  const hasPrivateProducts = privateProducts.length > 0;
+  const hasBothAccessTypes = hasPublicProducts && hasPrivateProducts;
+  const eventsPath = brand.eventsPath || "/events";
+
+  // Apply access filter to get the base pool of products
+  const accessFiltered = useMemo(() => {
+    if (!accessFilter) return products;
+    if (accessFilter === "private") return privateProducts;
+    if (accessFilter === "public") return publicProducts;
+    return products;
+  }, [accessFilter, products, privateProducts, publicProducts]);
+
+  // Category-mode: compute counts from access-filtered products
   const categoryFilterCounts = useMemo(() => {
     if (!hasCategoryFilters) return {};
     const counts: Record<string, number> = {};
     for (const cf of brand.categoryFilters!) {
-      counts[cf.key] = products.filter((p) => matchesFilter(p, cf)).length;
+      counts[cf.key] = accessFiltered.filter((p) => matchesFilter(p, cf)).length;
     }
     return counts;
-  }, [products, brand.categoryFilters, hasCategoryFilters]);
+  }, [accessFiltered, brand.categoryFilters, hasCategoryFilters]);
 
-  // Legacy mode: private vs public
-  const privateProducts = products.filter((p) => p.category !== "public-event");
-  const publicProducts = products.filter((p) => p.category === "public-event");
-  const eventsPath = brand.eventsPath || "/events";
-
-  // Compute displayed products based on active category + format filters
+  // Compute displayed products based on all three filter dimensions
   const displayed = useMemo(() => {
     let result: Product[];
     if (filter === "all") {
-      result = products;
+      result = accessFiltered;
     } else if (hasCategoryFilters) {
       const cf = brand.categoryFilters!.find((f) => f.key === filter);
-      result = cf ? products.filter((p) => matchesFilter(p, cf)) : products;
+      result = cf ? accessFiltered.filter((p) => matchesFilter(p, cf)) : accessFiltered;
     } else if (filter === "private") {
       result = privateProducts;
     } else if (filter === "public") {
       result = publicProducts;
     } else {
-      result = products;
+      result = accessFiltered;
     }
     // Apply format filter if active
     if (formatFilter) {
-      result = result.filter((p) => p.format === formatFilter);
+      result = result.filter((p) => matchesFormat(p, formatFilter));
     }
     return result;
-  }, [filter, formatFilter, products, privateProducts, publicProducts, hasCategoryFilters, brand.categoryFilters]);
+  }, [filter, accessFilter, formatFilter, accessFiltered, products, privateProducts, publicProducts, hasCategoryFilters, brand.categoryFilters]);
 
-  // Count products per format (from currently category-filtered results, before format filter)
+  // Count products per format (from category + access filtered results, before format filter)
   const formatCounts = useMemo(() => {
     let base: Product[];
     if (filter === "all") {
-      base = products;
+      base = accessFiltered;
     } else if (hasCategoryFilters) {
       const cf = brand.categoryFilters!.find((f) => f.key === filter);
-      base = cf ? products.filter((p) => matchesFilter(p, cf)) : products;
+      base = cf ? accessFiltered.filter((p) => matchesFilter(p, cf)) : accessFiltered;
     } else if (filter === "private") {
       base = privateProducts;
     } else if (filter === "public") {
       base = publicProducts;
     } else {
-      base = products;
+      base = accessFiltered;
     }
     const counts: Record<string, number> = {};
     for (const fmt of FORMAT_OPTIONS) {
-      counts[fmt.value] = base.filter((p) => p.format === fmt.value).length;
+      counts[fmt.value] = base.filter((p) => matchesFormat(p, fmt.value)).length;
     }
     return counts;
-  }, [filter, products, privateProducts, publicProducts, hasCategoryFilters, brand.categoryFilters]);
+  }, [filter, accessFiltered, products, privateProducts, publicProducts, hasCategoryFilters, brand.categoryFilters]);
 
   const hasAnyFormats = Object.values(formatCounts).some((c) => c > 0);
 
@@ -253,7 +274,7 @@ export function EventsListingPage() {
             {/* Category filter cards */}
             {brand.categoryFilters!.map((cf) => {
               const isActive = filter === cf.key;
-              const activeColour = cf.colour || "bg-orange-500";
+              const activeColour = cf.colour || "bg-primary";
               const count = categoryFilterCounts[cf.key] || 0;
 
               return (
@@ -323,13 +344,13 @@ export function EventsListingPage() {
               onClick={() => setFilter(filter === "private" ? "all" : "private")}
               className={`text-left p-5 rounded-xl shadow-md transition-all ${
                 filter === "private"
-                  ? "bg-orange-500 text-white scale-[1.02] shadow-lg"
+                  ? "bg-primary text-white scale-[1.02] shadow-lg"
                   : "bg-white text-gray-900 hover:shadow-lg hover:-translate-y-0.5 border border-gray-200"
               }`}
               data-action="events_filter_private"
             >
               <div className="flex items-center gap-3 mb-2">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${filter === "private" ? "bg-white/20" : "bg-orange-500 bg-opacity-10"}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${filter === "private" ? "bg-white/20" : "bg-primary bg-opacity-10"}`}>
                   <FaLock className={`text-lg ${filter === "private" ? "text-white" : "text-gray-700"}`} />
                 </div>
                 <div>
@@ -372,44 +393,90 @@ export function EventsListingPage() {
         )}
       </div>
 
-      {/* Format Filter Pills */}
-      {hasAnyFormats && (
-        <div className="max-w-screen-xl mx-auto px-4 mt-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-gray-500 mr-1">Format:</span>
-            {FORMAT_OPTIONS.map((fmt) => {
-              const count = formatCounts[fmt.value];
-              if (count === 0) return null;
-              const isActive = formatFilter === fmt.value;
-              return (
-                <button
-                  key={fmt.value}
-                  onClick={() => setFormatFilter(isActive ? null : fmt.value)}
-                  className={`inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full border transition-all ${
-                    isActive
-                      ? "bg-gray-900 text-white border-gray-900"
-                      : "bg-white text-gray-700 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-                  }`}
-                  data-action={`events_format_${fmt.value}`}
-                >
-                  <span className="text-xs">{fmt.icon}</span>
-                  {fmt.label}
-                  <span className={`text-xs ${isActive ? "text-white/70" : "text-gray-400"}`}>({count})</span>
-                </button>
-              );
-            })}
-            {formatFilter && (
+      {/* Private/Public + Format Filter Pills */}
+      {(hasBothAccessTypes || hasAnyFormats) && (
+        <div className="max-w-screen-xl mx-auto px-4 mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
+          {/* Private/Public toggle - only show when both types exist */}
+          {hasBothAccessTypes && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 mr-1">Type:</span>
               <button
-                onClick={() => setFormatFilter(null)}
-                className="text-xs text-gray-400 hover:text-gray-600 underline ml-1"
-                data-action="events_format_clear"
+                onClick={() => setAccessFilter(accessFilter === "private" ? null : "private")}
+                className={`inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full border transition-all ${
+                  accessFilter === "private"
+                    ? "bg-gray-900 text-white border-gray-900"
+                    : "bg-white text-gray-700 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                }`}
+                data-action="events_access_private"
               >
-                Clear
+                <FaLock className="text-xs" />
+                Private
+                <span className={`text-xs ${accessFilter === "private" ? "text-white/70" : "text-gray-400"}`}>({privateProducts.length})</span>
               </button>
-            )}
-          </div>
+              <button
+                onClick={() => setAccessFilter(accessFilter === "public" ? null : "public")}
+                className={`inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full border transition-all ${
+                  accessFilter === "public"
+                    ? "bg-emerald-600 text-white border-emerald-600"
+                    : "bg-white text-gray-700 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                }`}
+                data-action="events_access_public"
+              >
+                <FaGlobe className="text-xs" />
+                Public
+                <span className={`text-xs ${accessFilter === "public" ? "text-white/70" : "text-gray-400"}`}>({publicProducts.length})</span>
+              </button>
+              {accessFilter && (
+                <button
+                  onClick={() => setAccessFilter(null)}
+                  className="text-xs text-gray-400 hover:text-gray-600 underline"
+                  data-action="events_access_clear"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Format pills */}
+          {hasAnyFormats && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 mr-1">Format:</span>
+              {FORMAT_OPTIONS.map((fmt) => {
+                const count = formatCounts[fmt.value];
+                if (count === 0) return null;
+                const isActive = formatFilter === fmt.value;
+                return (
+                  <button
+                    key={fmt.value}
+                    onClick={() => setFormatFilter(isActive ? null : fmt.value)}
+                    className={`inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full border transition-all ${
+                      isActive
+                        ? "bg-gray-900 text-white border-gray-900"
+                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                    }`}
+                    data-action={`events_format_${fmt.value}`}
+                  >
+                    <span className="text-xs">{fmt.icon}</span>
+                    {fmt.label}
+                    <span className={`text-xs ${isActive ? "text-white/70" : "text-gray-400"}`}>({count})</span>
+                  </button>
+                );
+              })}
+              {formatFilter && (
+                <button
+                  onClick={() => setFormatFilter(null)}
+                  className="text-xs text-gray-400 hover:text-gray-600 underline"
+                  data-action="events_format_clear"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
+
 
       {/* Products Grid */}
       <div className="max-w-screen-xl mx-auto px-4 py-10">
@@ -423,8 +490,8 @@ export function EventsListingPage() {
           <div className="text-center py-20">
             <p className="text-gray-500 text-lg mb-4">No events found.</p>
             <button
-              onClick={() => setFilter("all")}
-              className="inline-flex items-center gap-2 bg-orange-500 text-white font-bold px-6 py-3 rounded-lg hover:bg-orange-600 transition"
+              onClick={() => { setFilter("all"); setAccessFilter(null); setFormatFilter(null); }}
+              className="inline-flex items-center gap-2 bg-primary text-white font-bold px-6 py-3 rounded-lg hover:bg-primary-dark transition"
               data-action="events_empty_show_all"
             >
               Show All Events
@@ -437,8 +504,8 @@ export function EventsListingPage() {
             {filter === "all" ? (
               <>
                 {brand.categoryFilters!.map((cf) => {
-                  let sectionProducts = products.filter((p) => matchesFilter(p, cf));
-                  if (formatFilter) sectionProducts = sectionProducts.filter((p) => p.format === formatFilter);
+                  let sectionProducts = accessFiltered.filter((p) => matchesFilter(p, cf));
+                  if (formatFilter) sectionProducts = sectionProducts.filter((p) => matchesFormat(p, formatFilter));
                   if (sectionProducts.length === 0) return null;
                   return (
                     <div key={cf.key} className="mb-12">
@@ -458,11 +525,11 @@ export function EventsListingPage() {
                 {(() => {
                   const categorised = new Set(
                     brand.categoryFilters!.flatMap((cf) =>
-                      products.filter((p) => matchesFilter(p, cf)).map((p) => p.id)
+                      accessFiltered.filter((p) => matchesFilter(p, cf)).map((p) => p.id)
                     )
                   );
-                  let uncategorised = products.filter((p) => !categorised.has(p.id));
-                  if (formatFilter) uncategorised = uncategorised.filter((p) => p.format === formatFilter);
+                  let uncategorised = accessFiltered.filter((p) => !categorised.has(p.id));
+                  if (formatFilter) uncategorised = uncategorised.filter((p) => matchesFormat(p, formatFilter));
                   if (uncategorised.length === 0) return null;
                   return (
                     <div className="mb-12">
@@ -495,7 +562,7 @@ export function EventsListingPage() {
               <div className="mb-12">
                 {filter === "all" && (
                   <h2 className="font-poppins text-2xl font-bold text-text-primary mb-6 flex items-center gap-2">
-                    <FaLock className="text-orange-500 text-lg" /> Private Events
+                    <FaLock className="text-primary text-lg" /> Private Events
                   </h2>
                 )}
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -514,16 +581,16 @@ export function EventsListingPage() {
                           {product.coverImage ? (
                             <img src={resolveImage(product.coverImage)} alt={product.name} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100">
-                              <FaMapMarkerAlt className="text-5xl text-orange-300" />
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/5 to-primary/10">
+                              <FaMapMarkerAlt className="text-5xl text-primary/40" />
                             </div>
                           )}
-                          <span className="absolute top-3 right-3 bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                          <span className="absolute top-3 right-3 bg-primary text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
                             <FaLock className="text-[10px]" /> Private
                           </span>
                         </div>
                         <div className="p-5 flex-1">
-                          <h3 className="font-bold text-lg text-gray-900 mb-2 group-hover:text-orange-500 transition-colors">
+                          <h3 className="font-bold text-lg text-gray-900 mb-2 group-hover:text-primary transition-colors">
                             {product.name}
                           </h3>
                           {product.shortDesc && (
@@ -532,7 +599,7 @@ export function EventsListingPage() {
                           {themes.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mb-3">
                               {themes.slice(0, 4).map((theme) => (
-                                <span key={theme} className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full">{theme}</span>
+                                <span key={theme} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{theme}</span>
                               ))}
                               {themes.length > 4 && (
                                 <span className="text-xs text-gray-400">+{themes.length - 4} more</span>
@@ -541,13 +608,13 @@ export function EventsListingPage() {
                           )}
                           <div className="flex flex-wrap gap-3 text-sm text-gray-500">
                             {product.duration && (
-                              <span className="flex items-center gap-1"><FaClock className="text-orange-400" /> {product.duration}</span>
+                              <span className="flex items-center gap-1"><FaClock className="text-primary/70" /> {product.duration}</span>
                             )}
                             {product.maxGroupSize && (
-                              <span className="flex items-center gap-1"><FaUsers className="text-orange-400" /> Up to {product.maxGroupSize.toLocaleString()}</span>
+                              <span className="flex items-center gap-1"><FaUsers className="text-primary/70" /> Up to {product.maxGroupSize.toLocaleString()}</span>
                             )}
                             {lowestPrice && (
-                              <span className="font-semibold text-orange-500 ml-auto">From &pound;{(lowestPrice / 100).toFixed(0)}pp</span>
+                              <span className="font-semibold text-primary ml-auto">From &pound;{(lowestPrice / 100).toFixed(0)}pp</span>
                             )}
                           </div>
                         </div>

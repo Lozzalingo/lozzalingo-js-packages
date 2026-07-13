@@ -62,7 +62,7 @@ export function EventSections({ sections, galleryImages, themes, venue, productN
               renderCustomContent={() => (
                 <div className="flex flex-wrap gap-2 pb-4 px-1">
                   {themes.map((theme) => (
-                    <span key={theme} className="inline-flex items-center bg-orange-50 text-orange-700 border border-orange-200 px-3 py-1 rounded-full text-xs font-medium">{theme}</span>
+                    <span key={theme} className="inline-flex items-center bg-primary/10 text-primary border border-primary/20 px-3 py-1 rounded-full text-xs font-medium">{theme}</span>
                   ))}
                 </div>
               )}
@@ -158,7 +158,7 @@ export function EventSections({ sections, galleryImages, themes, venue, productN
               section.type === "list" ? () => (
                 <div className="flex flex-wrap gap-2 pb-4 px-1">
                   {items.map((item, i) => (
-                    <span key={i} className="inline-flex items-center bg-orange-50 text-orange-700 border border-orange-200 px-3 py-1 rounded-full text-xs font-medium">{item}</span>
+                    <span key={i} className="inline-flex items-center bg-primary/10 text-primary border border-primary/20 px-3 py-1 rounded-full text-xs font-medium">{item}</span>
                   ))}
                 </div>
               ) : section.type === "steps" ? () => (
@@ -174,7 +174,7 @@ export function EventSections({ sections, galleryImages, themes, venue, productN
                 <ul className="space-y-2 pb-4 px-1 list-none">
                   {items.map((item, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                      <span className="text-orange-500 mt-1 flex-shrink-0">&#8226;</span>
+                      <span className="text-primary mt-1 flex-shrink-0">&#8226;</span>
                       <span>{item}</span>
                     </li>
                   ))}
@@ -186,8 +186,8 @@ export function EventSections({ sections, galleryImages, themes, venue, productN
                     const category = hasCategory ? item.split(":")[0] : "";
                     const detail = hasCategory ? item.split(":").slice(1).join(":").trim() : item;
                     return (
-                      <div key={i} className="bg-red-50 border border-red-200 rounded-lg p-3">
-                        {hasCategory && <span className="text-xs font-semibold text-red-600 uppercase tracking-wide">{category}</span>}
+                      <div key={i} className="bg-primary/5 border border-primary/15 rounded-lg p-3">
+                        {hasCategory && <span className="text-xs font-semibold text-primary uppercase tracking-wide">{category}</span>}
                         <p className="text-sm text-text-secondary mt-0.5">{detail}</p>
                       </div>
                     );

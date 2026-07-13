@@ -162,6 +162,48 @@ function buildInvoiceEmailHtml(data, options) {
     `Hello ${data.customerFirstName}, thank you for choosing our services!`,
   );
 
+  // Build line items breakdown if available
+  let lineItemsHtml = "";
+  const lineItems = Array.isArray(data.lineItems) ? data.lineItems : [];
+  if (lineItems.length > 0) {
+    const rows = lineItems.map(item => {
+      const name = item.name || item.description || "Item";
+      const qty = item.quantity || 1;
+      const unitPence = item.unitPricePence || item.amount || 0;
+      const totalPence = qty > 1 ? unitPence * qty : unitPence;
+      const unitStr = formatPence(unitPence);
+      const totalStr = formatPence(totalPence);
+      return `<tr>
+        <td style="padding: 10px 8px; border-bottom: 1px solid #e9ecef; color: #333;">${name}</td>
+        ${qty > 1 ? `<td style="padding: 10px 8px; border-bottom: 1px solid #e9ecef; color: #666; text-align: center;">${qty}</td>
+        <td style="padding: 10px 8px; border-bottom: 1px solid #e9ecef; color: #666; text-align: right;">${unitStr}</td>` : `<td style="padding: 10px 8px; border-bottom: 1px solid #e9ecef; color: #666; text-align: center;">1</td>
+        <td style="padding: 10px 8px; border-bottom: 1px solid #e9ecef; color: #666; text-align: right;">${unitStr}</td>`}
+        <td style="padding: 10px 8px; border-bottom: 1px solid #e9ecef; color: #333; text-align: right; font-weight: 600;">${totalStr}</td>
+      </tr>`;
+    }).join("");
+
+    lineItemsHtml = `
+    <div style="background: #fff; border: 1px solid #e9ecef; border-radius: 8px; margin-bottom: 25px; overflow: hidden;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="background: #f8f9fa;">
+            <th style="padding: 12px 8px; text-align: left; color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Description</th>
+            <th style="padding: 12px 8px; text-align: center; color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Qty</th>
+            <th style="padding: 12px 8px; text-align: right; color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Unit Price</th>
+            <th style="padding: 12px 8px; text-align: right; color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr style="background: #f8f9fa;">
+            <td colspan="3" style="padding: 12px 8px; text-align: right; font-weight: bold; color: #333; font-size: 16px;">Total Due:</td>
+            <td style="padding: 12px 8px; text-align: right; font-weight: bold; color: #667eea; font-size: 18px;">${formattedAmount}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
+  }
+
   const invoiceDetailsHtml = `
     <div style="background: #f8f9fa; border: 1px solid #e9ecef; padding: 25px; border-radius: 8px; margin-bottom: 25px;">
       <h2 style="color: #333; font-size: 22px; margin-top: 0; margin-bottom: 20px;">Invoice Details</h2>
@@ -169,7 +211,7 @@ function buildInvoiceEmailHtml(data, options) {
         <tr><td style="padding: 8px 0; font-weight: bold; color: #666; width: 40%;">Invoice Number:</td><td style="padding: 8px 0; color: #333;">${data.invoiceNumber}</td></tr>
         <tr><td style="padding: 8px 0; font-weight: bold; color: #666;">Service:</td><td style="padding: 8px 0; color: #333;">${data.productName || "Service"}</td></tr>
         ${data.companyName ? `<tr><td style="padding: 8px 0; font-weight: bold; color: #666;">Organisation:</td><td style="padding: 8px 0; color: #333;">${data.companyName}</td></tr>` : ""}
-        <tr><td style="padding: 8px 0; font-weight: bold; color: #666;">Amount Due:</td><td style="padding: 8px 0; font-size: 24px; font-weight: bold; color: #667eea;">${formattedAmount}</td></tr>
+        ${lineItems.length === 0 ? `<tr><td style="padding: 8px 0; font-weight: bold; color: #666;">Amount Due:</td><td style="padding: 8px 0; font-size: 24px; font-weight: bold; color: #667eea;">${formattedAmount}</td></tr>` : ""}
         <tr><td style="padding: 8px 0; font-weight: bold; color: #666;">Due Date:</td><td style="padding: 8px 0; color: #333;">${formattedDate}</td></tr>
       </table>
     </div>`;
@@ -183,7 +225,7 @@ function buildInvoiceEmailHtml(data, options) {
 
   return wrapFull(
     headerHtml,
-    `${bookingInfoHtml}${bankDetailsHtml}${invoiceDetailsHtml}${ctaHtml}`,
+    `${bookingInfoHtml}${bankDetailsHtml}${invoiceDetailsHtml}${lineItemsHtml}${ctaHtml}`,
     options,
   );
 }

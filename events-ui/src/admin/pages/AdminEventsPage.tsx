@@ -87,7 +87,7 @@ type ProductSection = {
   isCollapsible: boolean;
 };
 
-const FORMAT_OPTIONS = ["in-person", "virtual", "outdoors", "indoors", "hybrid"] as const;
+const FORMAT_OPTIONS = ["in-person", "virtual", "outdoors", "indoors", "hybrid", "customer-choice"] as const;
 
 type Product = {
   id: string;
