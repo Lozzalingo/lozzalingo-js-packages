@@ -43,6 +43,7 @@ export default function SubscribePopup({
   privacyUrl = '/privacy',
 }: SubscribePopupProps) {
   const [visible, setVisible] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [form, setForm] = useState<FormState>({
     email: '',
     firstName: '',
@@ -175,15 +176,29 @@ export default function SubscribePopup({
     }
   };
 
+  // Trigger mount animation after visible flips to true
+  useEffect(() => {
+    if (visible) {
+      // Request animation frame so the initial (opacity-0) render paints first
+      const raf = requestAnimationFrame(() => setMounted(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    setMounted(false);
+  }, [visible]);
+
   if (!visible) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ease-out ${
+        mounted ? 'bg-black/40 opacity-100' : 'bg-black/0 opacity-0'
+      }`}
       onClick={dismiss}
     >
       <div
-        className="relative bg-white shadow-2xl rounded-xl max-w-lg w-full p-8 border border-gray-200"
+        className={`relative bg-white shadow-2xl rounded-xl max-w-lg w-full p-8 border border-gray-200 transition-all duration-300 ease-out ${
+          mounted ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-4'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <button

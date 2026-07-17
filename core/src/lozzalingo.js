@@ -497,10 +497,21 @@ class Lozzalingo {
   _registerAnalytics() {
     if (!this.isEnabled("analytics")) return;
     this._tryRegister("analytics", () => {
-      // Analytics has both client and server components
-      const analyticsPath = this.config.routes.analytics || "/api/analytics";
+      const { createVisitorRoutes } = require("@lozzalingo/analytics/server");
+      const analyticsPath = this.config.routes.analytics || "/api/visitors";
+      this.app.use(
+        analyticsPath,
+        createVisitorRoutes(this.prisma, {
+          siteDomain: this.config.site.baseUrl
+            ? this.config.site.baseUrl.replace(/^https?:\/\//, "")
+            : "localhost",
+          features: {
+            ecommerce: this.isEnabled("merchandise") || this.isEnabled("orders"),
+          },
+        })
+      );
+      this.app.set("analyticsPath", analyticsPath);
       console.log("[Core] Analytics registered at", analyticsPath);
-      // Site-specific analytics setup can be done via lz.app
     });
   }
 
@@ -885,9 +896,56 @@ class Lozzalingo {
         },
         onPaid: async (booking) => {
           console.log("[Bookings] Booking paid:", booking.bookingNumber);
+
           if (booking.calendarEventId && bookSlot) {
+            // Existing slot (e.g. PENCILLED during checkout) - confirm it as BOOKED
             await bookSlot(prisma, "calendarEvent", booking.calendarEventId, booking.id);
+          } else if (!booking.calendarEventId && createAndBlockSlot && booking.eventDate && booking.eventTime) {
+            // No slot yet (e.g. ENQUIRY -> INVOICE_SENT -> PAID) - create one
+            try {
+              const window = parseBookingTimeWindow(booking);
+              if (window) {
+                const bufferMs = (booking.timeBlocking === "buffer" && booking.bufferHours)
+                  ? booking.bufferHours * 60 * 1000
+                  : 0;
+                const slotStart = new Date(window.startTime.getTime() - bufferMs);
+                const slotEnd = new Date(window.endTime.getTime() + bufferMs);
+
+                console.log(`[Bookings] Creating BOOKED calendar slot for ${booking.bookingNumber}: ${slotStart.toISOString()} - ${slotEnd.toISOString()}`);
+
+                const result = await createAndBlockSlot(prisma, {
+                  title: `${booking.customerName} - ${booking.bookingNumber}`,
+                  startTime: slotStart,
+                  endTime: slotEnd,
+                  bookingId: booking.id,
+                  productId: booking.productId || null,
+                  locationName: booking.locationName || null,
+                  timeBlockingMode: booking.timeBlocking || "buffer",
+                  slotStatus: "BOOKED",
+                }, { travelBufferMinutes: 0 });
+
+                if (result.success && result.slot) {
+                  const timeFmt = new Intl.DateTimeFormat("en-GB", {
+                    timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hour12: false,
+                  });
+                  const [sh, sm] = timeFmt.format(slotStart).split(":");
+                  const [eh, em] = timeFmt.format(slotEnd).split(":");
+                  await prisma[bookingModelName].update({
+                    where: { id: booking.id },
+                    data: {
+                      calendarEventId: result.slot.id,
+                      slotStartTime: `${sh}:${sm}`,
+                      slotEndTime: `${eh}:${em}`,
+                    },
+                  });
+                  console.log(`[Bookings] Calendar slot created and linked: ${result.slot.id}`);
+                }
+              }
+            } catch (calErr) {
+              console.error("[Bookings] Failed to create calendar slot on payment:", calErr.message);
+            }
           }
+
           const enriched = await enrichBooking(booking);
           await outreach.trigger("booking_paid", enriched);
           await outreach.trigger("booking_paid_admin", enriched);

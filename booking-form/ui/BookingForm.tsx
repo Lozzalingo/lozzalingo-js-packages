@@ -375,6 +375,89 @@ export default function BookingForm({
     return errors;
   };
 
+  /** Validate a single section by ID. Returns errors only for that section. */
+  const validateSection = (sectionId: string): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    switch (sectionId) {
+      case "your-details": {
+        if (isFieldEnabled("your-details", "first-name") && !form.firstName) errors.name = "Please enter your first name.";
+        if (isFieldEnabled("your-details", "last-name") && !form.lastName) errors.name = errors.name ? "Please enter your first and last name." : "Please enter your last name.";
+        if (isFieldEnabled("your-details", "email") && !form.email) errors.email = "Please enter your email address.";
+        if (isFieldEnabled("your-details", "phone") && !form.phone) errors.phone = "Please enter your phone number.";
+        if (isFieldEnabled("your-details", "company") && isCorporate && !form.companyName) errors.company = "Company name is required for corporate bookings.";
+        break;
+      }
+      case "choose-event": {
+        if (isFieldEnabled("choose-event", "event-selector") && !form.productId) errors.event = "Please choose your event.";
+        if (isFieldEnabled("choose-event", "group-size") && groupSizeNum < 1) errors["group-size"] = "Please enter your group size.";
+        if (isFieldEnabled("choose-event", "first-place-prizes") && !form.firstPlacePrize) errors["first-place-prize"] = "Please choose a first place prize.";
+        if (isFieldEnabled("choose-event", "event-format")) {
+          if (effectiveFormat === "virtual" && !form.virtualPlatform) errors["virtual-platform"] = "Please choose a platform.";
+          if (effectiveFormat === "in-person") {
+            if (resolvedShowPublicMeetingSpace) {
+              if (!form.venueAddress || form.venueAddress === "") errors["venue-address"] = "Please choose a venue option.";
+              else if (form.venueAddress !== "__public__" && !form.venueAddress.trim()) errors["venue-address"] = "Please enter your venue address.";
+            } else {
+              if (!form.venueAddress?.trim()) errors["venue-address"] = "Please enter your venue address.";
+            }
+          }
+        }
+        break;
+      }
+      case "group-type": {
+        if (isFieldEnabled("group-type", "group-types")) {
+          if (!form.groupType) errors["group-type"] = "Please select a group type.";
+          if (isOther && !form.otherGroupType) errors["other-group-type"] = "Please tell us what type of group this is.";
+        }
+        if (isFieldEnabled("group-type", "styles") && !form.style) errors.style = "Please select a style.";
+        if (isFieldEnabled("group-type", "drink-styles") && !form.drinkStyle) errors["drink-style"] = "Please choose sober or boozy.";
+        break;
+      }
+      case "task-sections": {
+        if (taskSections.length === 0) errors["task-sections"] = "Please add at least one task section.";
+        else if (!sectionsValid) errors["task-sections"] = "Please complete all task sections.";
+        break;
+      }
+      case "duration": {
+        if (!form.duration) errors.duration = "Please choose a duration.";
+        break;
+      }
+      case "date-time": {
+        if (canInstantBook && (!form.eventDate || !form.eventTime)) errors["date-time"] = "Please select a date and time.";
+        break;
+      }
+      // add-ons, time-blocking, message have no required validation
+    }
+    return errors;
+  };
+
+  /** Multi-step navigation */
+  const handleNextStep = () => {
+    if (!isMultiStep) return;
+    const currentSectionId = enabledSections[currentStep]?.id;
+    if (currentSectionId) {
+      const errors = validateSection(currentSectionId);
+      if (Object.keys(errors).length > 0) {
+        console.log(`[BookingForm] Step validation failed for "${currentSectionId}":`, Object.keys(errors));
+        setFormErrors(errors);
+        scrollToFirstError(errors);
+        return;
+      }
+      setFormErrors({});
+    }
+    if (currentStep < totalSteps - 1) {
+      setCurrentStep(currentStep + 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      console.log(`[BookingForm] Step ${currentStep + 1} -> ${currentStep + 2} of ${totalSteps}`);
+    }
+  };
+  const handlePrevStep = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
   // ─── Submission ────────────────────────────────────────────────────────────
   const handleModeSwitch = (mode: "private" | "public") => {
     if (mode === "public" && publicEventPath) { router.push(publicEventPath); return; }
@@ -431,6 +514,10 @@ export default function BookingForm({
 
   // ─── Section Renderers ─────────────────────────────────────────────────────
   const sortedSections = [...(cfg.bookingSections || DEFAULT_BOOKING_CONFIG.bookingSections)].sort((a, b) => a.order - b.order);
+  const enabledSections = sortedSections.filter((s) => s.enabled);
+  const isMultiStep = cfg.formLayout === "multi-step";
+  const [currentStep, setCurrentStep] = useState(0);
+  const totalSteps = enabledSections.length;
 
   // We need SharedCalendar - import dynamically to avoid hard dep on @lozzalingo/calendar
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -457,15 +544,15 @@ export default function BookingForm({
           <div className="space-y-4">
             {(showFirstName || showLastName) && (
               <div id="field-name" className={`grid ${nameFields === 2 ? "sm:grid-cols-2" : ""} gap-4`}>
-                {showFirstName && <div><label className="block text-sm font-medium text-text-primary mb-1">First Name *</label><input type="text" required value={form.firstName} onChange={(e) => { setForm({ ...form, firstName: e.target.value }); clearError("name"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.name ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Jane" /></div>}
-                {showLastName && <div><label className="block text-sm font-medium text-text-primary mb-1">Last Name *</label><input type="text" required value={form.lastName} onChange={(e) => { setForm({ ...form, lastName: e.target.value }); clearError("name"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.name ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Smith" /></div>}
+                {showFirstName && <div><label className="block text-sm font-medium text-text-primary mb-1">First Name *</label><input data-field="first-name" type="text" required value={form.firstName} onChange={(e) => { setForm({ ...form, firstName: e.target.value }); clearError("name"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.name ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Jane" /></div>}
+                {showLastName && <div><label className="block text-sm font-medium text-text-primary mb-1">Last Name *</label><input data-field="last-name" type="text" required value={form.lastName} onChange={(e) => { setForm({ ...form, lastName: e.target.value }); clearError("name"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.name ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Smith" /></div>}
                 {formErrors.name && <p className="text-sm text-red-600 col-span-full">{formErrors.name}</p>}
               </div>
             )}
             {(showEmail || showPhone) && (
               <div className={`grid ${contactFields === 2 ? "sm:grid-cols-2" : ""} gap-4`}>
-                {showEmail && <div id="field-email"><label className="block text-sm font-medium text-text-primary mb-1"><FaEnvelope className="inline mr-1 text-text-secondary" />Email *</label><input type="email" required value={form.email} onChange={(e) => { setForm({ ...form, email: e.target.value }); clearError("email"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.email ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="jane@company.com" />{formErrors.email && <p className="text-sm text-red-600 mt-1">{formErrors.email}</p>}</div>}
-                {showPhone && <div id="field-phone"><label className="block text-sm font-medium text-text-primary mb-1"><FaPhone className="inline mr-1 text-text-secondary" />Phone *</label><input type="tel" required value={form.phone} onChange={(e) => { setForm({ ...form, phone: e.target.value }); clearError("phone"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.phone ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="+44 7700 900000" />{formErrors.phone && <p className="text-sm text-red-600 mt-1">{formErrors.phone}</p>}</div>}
+                {showEmail && <div id="field-email"><label className="block text-sm font-medium text-text-primary mb-1"><FaEnvelope className="inline mr-1 text-text-secondary" />Email *</label><input data-field="email" type="email" required value={form.email} onChange={(e) => { setForm({ ...form, email: e.target.value }); clearError("email"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.email ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="jane@company.com" />{formErrors.email && <p className="text-sm text-red-600 mt-1">{formErrors.email}</p>}</div>}
+                {showPhone && <div id="field-phone"><label className="block text-sm font-medium text-text-primary mb-1"><FaPhone className="inline mr-1 text-text-secondary" />Phone *</label><input data-field="phone" type="tel" required value={form.phone} onChange={(e) => { setForm({ ...form, phone: e.target.value }); clearError("phone"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.phone ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="+44 7700 900000" />{formErrors.phone && <p className="text-sm text-red-600 mt-1">{formErrors.phone}</p>}</div>}
               </div>
             )}
           </div>
@@ -484,10 +571,10 @@ export default function BookingForm({
           <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaUsers className="text-cta" /> Choose Your Event</h2>
           <div className="space-y-4">
             {showGroupSize && (
-              <div id="field-group-size"><label className="block text-sm font-medium text-text-primary mb-1">Group Size *</label><div className="relative"><FaUsers className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" /><input type="number" required min={1} value={form.groupSize} onChange={(e) => { setForm({ ...form, groupSize: e.target.value }); clearError("group-size"); }} className={`w-full pl-10 pr-4 py-3 rounded-lg border ${formErrors["group-size"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="How many players?" /></div>{formErrors["group-size"] ? <p className="text-sm text-red-600 mt-1">{formErrors["group-size"]}</p> : groupSizeNum > 0 && groupSizeNum < pricing.minPlayers && <p className="text-xs text-info mt-1">A minimum charge of {formatPence(pricing.minReserve)} applies (covers up to {pricing.minPlayers} players).</p>}</div>
+              <div id="field-group-size"><label className="block text-sm font-medium text-text-primary mb-1">Group Size *</label><div className="relative"><FaUsers className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" /><input data-field="group-size" type="number" required min={1} value={form.groupSize} onChange={(e) => { setForm({ ...form, groupSize: e.target.value }); clearError("group-size"); }} className={`w-full pl-10 pr-4 py-3 rounded-lg border ${formErrors["group-size"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="How many players?" /></div>{formErrors["group-size"] ? <p className="text-sm text-red-600 mt-1">{formErrors["group-size"]}</p> : groupSizeNum > 0 && groupSizeNum < pricing.minPlayers && <p className="text-xs text-info mt-1">A minimum charge of {formatPence(pricing.minReserve)} applies (covers up to {pricing.minPlayers} players).</p>}</div>
             )}
             {showEventSel && (
-              <div id="field-event"><label className="block text-sm font-medium text-text-primary mb-1">Choose Your Event *</label><select required value={form.productId} onChange={(e) => { setForm({ ...form, productId: e.target.value }); clearError("event"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.event ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition bg-white`}><option value="">Select an event...</option>{loadingProducts ? <option disabled>Loading...</option> : products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.duration ? ` (${p.duration})` : ""}</option>)}</select>{formErrors.event && <p className="text-sm text-red-600 mt-1">{formErrors.event}</p>}</div>
+              <div id="field-event"><label className="block text-sm font-medium text-text-primary mb-1">Choose Your Event *</label><select data-field="event-selector" required value={form.productId} onChange={(e) => { setForm({ ...form, productId: e.target.value }); clearError("event"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.event ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition bg-white`}><option value="">Select an event...</option>{loadingProducts ? <option disabled>Loading...</option> : products.map((p) => <option key={p.id} value={p.id}>{p.name}{p.duration ? ` (${p.duration})` : ""}</option>)}</select>{formErrors.event && <p className="text-sm text-red-600 mt-1">{formErrors.event}</p>}</div>
             )}
             {isFieldEnabled("choose-event", "event-format") && (
               <div id="field-event-format" className="space-y-3">
@@ -497,11 +584,11 @@ export default function BookingForm({
                     <label className="block text-sm font-medium text-text-primary mb-2">How would you like to attend? *</label>
                     <div className="grid grid-cols-2 gap-2">
                       <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${customerFormatChoice === "in-person" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
-                        <input type="radio" name="customerFormat" value="in-person" checked={customerFormatChoice === "in-person"} onChange={() => { setCustomerFormatChoice("in-person"); setForm((prev) => ({ ...prev, virtualPlatform: "" as "" | VirtualPlatform, venueAddress: " " })); clearError("virtual-platform"); clearError("venue-address"); }} className="sr-only" />
+                        <input data-field="customer-format" type="radio" name="customerFormat" value="in-person" checked={customerFormatChoice === "in-person"} onChange={() => { setCustomerFormatChoice("in-person"); setForm((prev) => ({ ...prev, virtualPlatform: "" as "" | VirtualPlatform, venueAddress: " " })); clearError("virtual-platform"); clearError("venue-address"); }} className="sr-only" />
                         <FaMapMarkerAlt className="text-sm" />In Person
                       </label>
                       <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${customerFormatChoice === "virtual" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
-                        <input type="radio" name="customerFormat" value="virtual" checked={customerFormatChoice === "virtual"} onChange={() => { setCustomerFormatChoice("virtual"); setForm((prev) => ({ ...prev, venueAddress: "", virtualPlatform: "" as "" | VirtualPlatform })); clearError("virtual-platform"); clearError("venue-address"); }} className="sr-only" />
+                        <input data-field="customer-format" type="radio" name="customerFormat" value="virtual" checked={customerFormatChoice === "virtual"} onChange={() => { setCustomerFormatChoice("virtual"); setForm((prev) => ({ ...prev, venueAddress: "", virtualPlatform: "" as "" | VirtualPlatform })); clearError("virtual-platform"); clearError("venue-address"); }} className="sr-only" />
                         <FaVideo className="text-sm" />Virtual
                       </label>
                     </div>
@@ -520,7 +607,7 @@ export default function BookingForm({
                     <div className={`grid grid-cols-2 gap-2 ${formErrors["virtual-platform"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>
                       {(cfg.virtualPlatforms || DEFAULT_BOOKING_CONFIG.virtualPlatforms || []).map((vp) => (
                         <label key={vp.value} className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.virtualPlatform === vp.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
-                          <input type="radio" name="virtualPlatform" value={vp.value} checked={form.virtualPlatform === vp.value} onChange={(e) => { setForm({ ...form, virtualPlatform: e.target.value as VirtualPlatform }); clearError("virtual-platform"); }} className="sr-only" />
+                          <input data-field="virtual-platform" type="radio" name="virtualPlatform" value={vp.value} checked={form.virtualPlatform === vp.value} onChange={(e) => { setForm({ ...form, virtualPlatform: e.target.value as VirtualPlatform }); clearError("virtual-platform"); }} className="sr-only" />
                           <FaLaptop className="text-sm" />{vp.label}
                         </label>
                       ))}
@@ -536,11 +623,11 @@ export default function BookingForm({
                     {resolvedShowPublicMeetingSpace && (
                       <div className={`grid grid-cols-2 gap-2 ${formErrors["venue-address"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>
                         <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress !== "__public__" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
-                          <input type="radio" name="venueType" checked={form.venueAddress !== "__public__"} onChange={() => { setForm({ ...form, venueAddress: " " }); clearError("venue-address"); }} className="sr-only" />
+                          <input data-field="venue-type" type="radio" name="venueType" checked={form.venueAddress !== "__public__"} onChange={() => { setForm({ ...form, venueAddress: " " }); clearError("venue-address"); }} className="sr-only" />
                           <FaBuilding className="text-sm" />Our Own Venue
                         </label>
                         <label className={`flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.venueAddress === "__public__" ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}>
-                          <input type="radio" name="venueType" checked={form.venueAddress === "__public__"} onChange={() => { setForm({ ...form, venueAddress: "__public__" }); clearError("venue-address"); }} className="sr-only" />
+                          <input data-field="venue-type" type="radio" name="venueType" checked={form.venueAddress === "__public__"} onChange={() => { setForm({ ...form, venueAddress: "__public__" }); clearError("venue-address"); }} className="sr-only" />
                           <FaMapMarkerAlt className="text-sm" />Public Meeting Space
                         </label>
                       </div>
@@ -550,7 +637,7 @@ export default function BookingForm({
                       <div className={resolvedShowPublicMeetingSpace ? "mt-3 animate-fade-in" : ""}>
                         {resolvedShowPublicMeetingSpace && <label className="block text-sm font-medium text-text-primary mb-1"><FaMapMarkerAlt className="inline mr-1 text-text-secondary" />Venue Address *</label>}
                         <div className="relative" ref={suggestionsRef}>
-                          <input type="text" value={form.venueAddress.trim() === "" ? "" : form.venueAddress} onChange={(e) => { setForm({ ...form, venueAddress: e.target.value }); clearError("venue-address"); searchAddress(e.target.value); }} onFocus={() => { if (addressSuggestions.length > 0) setShowSuggestions(true); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["venue-address"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Start typing an address..." autoComplete="off" />
+                          <input data-field="venue-address" type="text" value={form.venueAddress.trim() === "" ? "" : form.venueAddress} onChange={(e) => { setForm({ ...form, venueAddress: e.target.value }); clearError("venue-address"); searchAddress(e.target.value); }} onFocus={() => { if (addressSuggestions.length > 0) setShowSuggestions(true); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["venue-address"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Start typing an address..." autoComplete="off" />
                           {showSuggestions && addressSuggestions.length > 0 && (
                             <div className="absolute z-50 w-full mt-1 bg-white border border-border rounded-lg shadow-lg overflow-hidden">
                               {addressSuggestions.map((s, i) => (
@@ -584,7 +671,7 @@ export default function BookingForm({
               </div>
             )}
             {showFirstPlacePrizes && (
-              <div id="field-first-place-prize"><label className="block text-sm font-medium text-text-primary mb-2">First Place Prize *</label><div className={`grid grid-cols-1 sm:grid-cols-3 gap-2 ${formErrors["first-place-prize"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{FIRST_PLACE_PRIZES.map((fp) => (<label key={fp.value} className={`py-3 px-3 rounded-lg text-sm font-medium transition border text-center cursor-pointer ${form.firstPlacePrize === fp.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="firstPlacePrize" value={fp.value} checked={form.firstPlacePrize === fp.value} onChange={(e) => { setForm({ ...form, firstPlacePrize: e.target.value }); clearError("first-place-prize"); }} className="sr-only" required />{fp.label}</label>))}</div>{formErrors["first-place-prize"] && <p className="text-sm text-red-600 mt-1">{formErrors["first-place-prize"]}</p>}</div>
+              <div id="field-first-place-prize"><label className="block text-sm font-medium text-text-primary mb-2">First Place Prize *</label><div className={`grid grid-cols-1 sm:grid-cols-3 gap-2 ${formErrors["first-place-prize"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{FIRST_PLACE_PRIZES.map((fp) => (<label key={fp.value} className={`py-3 px-3 rounded-lg text-sm font-medium transition border text-center cursor-pointer ${form.firstPlacePrize === fp.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input data-field="first-place-prize" type="radio" name="firstPlacePrize" value={fp.value} checked={form.firstPlacePrize === fp.value} onChange={(e) => { setForm({ ...form, firstPlacePrize: e.target.value }); clearError("first-place-prize"); }} className="sr-only" required />{fp.label}</label>))}</div>{formErrors["first-place-prize"] && <p className="text-sm text-red-600 mt-1">{formErrors["first-place-prize"]}</p>}</div>
             )}
           </div>
         </section>
@@ -601,17 +688,17 @@ export default function BookingForm({
             {showGroupTypes && (
               <div id="field-group-type">
                 <label className="block text-sm font-medium text-text-primary mb-2">What type of group is this? *</label>
-                <div className={`grid grid-cols-2 sm:grid-cols-6 gap-2 ${formErrors["group-type"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{activeGroupTypes.map((gt) => (<label key={gt.value} className={`py-2.5 px-3 rounded-lg text-sm font-medium transition border text-center cursor-pointer ${form.groupType === gt.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="groupType" value={gt.value} checked={form.groupType === gt.value} onChange={(e) => { setForm({ ...form, groupType: e.target.value }); clearError("group-type"); }} className="sr-only" required />{gt.label}</label>))}</div>
+                <div className={`grid grid-cols-2 sm:grid-cols-6 gap-2 ${formErrors["group-type"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{activeGroupTypes.map((gt) => (<label key={gt.value} className={`py-2.5 px-3 rounded-lg text-sm font-medium transition border text-center cursor-pointer ${form.groupType === gt.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input data-field="group-type" type="radio" name="groupType" value={gt.value} checked={form.groupType === gt.value} onChange={(e) => { setForm({ ...form, groupType: e.target.value }); clearError("group-type"); }} className="sr-only" required />{gt.label}</label>))}</div>
                 {formErrors["group-type"] && <p className="text-sm text-red-600 mt-1">{formErrors["group-type"]}</p>}
-                {isCorporate && (<div id="field-company" className="mt-3 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-1"><FaBuilding className="inline mr-1 text-text-secondary" />Company / Organisation *</label><input type="text" required value={form.companyName} onChange={(e) => { setForm({ ...form, companyName: e.target.value }); clearError("company"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.company ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Acme Corp" />{formErrors.company ? <p className="text-sm text-red-600 mt-1">{formErrors.company}</p> : !form.companyName && <p className="text-xs text-cta mt-1">Required for corporate bookings</p>}</div>)}
-                {isOther && (<div id="field-other-group-type" className="mt-3 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-1">Please specify *</label><input type="text" required value={form.otherGroupType} onChange={(e) => { setForm({ ...form, otherGroupType: e.target.value }); clearError("other-group-type"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["other-group-type"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="e.g. Reunion, Team social, Leaving do" />{formErrors["other-group-type"] ? <p className="text-sm text-red-600 mt-1">{formErrors["other-group-type"]}</p> : !form.otherGroupType && <p className="text-xs text-cta mt-1">Please tell us what type of group this is</p>}</div>)}
+                {isCorporate && (<div id="field-company" className="mt-3 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-1"><FaBuilding className="inline mr-1 text-text-secondary" />Company / Organisation *</label><input data-field="company" type="text" required value={form.companyName} onChange={(e) => { setForm({ ...form, companyName: e.target.value }); clearError("company"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors.company ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="Acme Corp" />{formErrors.company ? <p className="text-sm text-red-600 mt-1">{formErrors.company}</p> : !form.companyName && <p className="text-xs text-cta mt-1">Required for corporate bookings</p>}</div>)}
+                {isOther && (<div id="field-other-group-type" className="mt-3 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-1">Please specify *</label><input data-field="other-group-type" type="text" required value={form.otherGroupType} onChange={(e) => { setForm({ ...form, otherGroupType: e.target.value }); clearError("other-group-type"); }} className={`w-full px-4 py-3 rounded-lg border ${formErrors["other-group-type"] ? "border-red-500 ring-2 ring-red-200" : "border-border"} focus:ring-2 focus:ring-cta focus:border-cta transition`} placeholder="e.g. Reunion, Team social, Leaving do" />{formErrors["other-group-type"] ? <p className="text-sm text-red-600 mt-1">{formErrors["other-group-type"]}</p> : !form.otherGroupType && <p className="text-xs text-cta mt-1">Please tell us what type of group this is</p>}</div>)}
               </div>
             )}
             {showStyles && (
-              <div id="field-style"><label className="block text-sm font-medium text-text-primary mb-2">Style *</label><div className={`grid grid-cols-2 gap-2 ${formErrors.style ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{STYLES.map((s) => (<label key={s.value} className={`py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.style === s.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="style" value={s.value} checked={form.style === s.value} onChange={(e) => { setForm({ ...form, style: e.target.value }); clearError("style"); }} className="sr-only" required />{s.label}</label>))}</div>{formErrors.style && <p className="text-sm text-red-600 mt-1">{formErrors.style}</p>}</div>
+              <div id="field-style"><label className="block text-sm font-medium text-text-primary mb-2">Style *</label><div className={`grid grid-cols-2 gap-2 ${formErrors.style ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{STYLES.map((s) => (<label key={s.value} className={`py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.style === s.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input data-field="style" type="radio" name="style" value={s.value} checked={form.style === s.value} onChange={(e) => { setForm({ ...form, style: e.target.value }); clearError("style"); }} className="sr-only" required />{s.label}</label>))}</div>{formErrors.style && <p className="text-sm text-red-600 mt-1">{formErrors.style}</p>}</div>
             )}
             {showDrinkStyles && (
-              <div id="field-drink-style"><label className="block text-sm font-medium text-text-primary mb-2">Would you like the tasks to include the occasional tipple? *</label><div className={`grid grid-cols-2 gap-2 ${formErrors["drink-style"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{DRINK_STYLES.map((ds) => (<label key={ds.value} className={`py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.drinkStyle === ds.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name="drinkStyle" value={ds.value} checked={form.drinkStyle === ds.value} onChange={(e) => { setForm({ ...form, drinkStyle: e.target.value }); clearError("drink-style"); }} className="sr-only" required />{ds.label}</label>))}</div>{formErrors["drink-style"] && <p className="text-sm text-red-600 mt-1">{formErrors["drink-style"]}</p>}</div>
+              <div id="field-drink-style"><label className="block text-sm font-medium text-text-primary mb-2">Would you like the tasks to include the occasional tipple? *</label><div className={`grid grid-cols-2 gap-2 ${formErrors["drink-style"] ? "ring-2 ring-red-200 rounded-lg" : ""}`}>{DRINK_STYLES.map((ds) => (<label key={ds.value} className={`py-3 px-4 rounded-lg font-medium transition border text-center cursor-pointer ${form.drinkStyle === ds.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input data-field="drink-style" type="radio" name="drinkStyle" value={ds.value} checked={form.drinkStyle === ds.value} onChange={(e) => { setForm({ ...form, drinkStyle: e.target.value }); clearError("drink-style"); }} className="sr-only" required />{ds.label}</label>))}</div>{formErrors["drink-style"] && <p className="text-sm text-red-600 mt-1">{formErrors["drink-style"]}</p>}</div>
             )}
           </div>
         </section>
@@ -636,7 +723,7 @@ export default function BookingForm({
                 return (
                   <div className="space-y-4">
                     <p className="text-xs text-text-secondary">Location tasks revolve around a specific area, giving the game a clear heading. These tasks are worth less individually, but unlock bonus points.</p>
-                    <select value={section.locationSlug || ""} onChange={(e) => updateSection(index, { locationSlug: e.target.value, useCustomStart: false, customStartAddress: "", useCustomEnd: false, customEndAddress: "" })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition bg-white text-sm">
+                    <select data-field="location" value={section.locationSlug || ""} onChange={(e) => updateSection(index, { locationSlug: e.target.value, useCustomStart: false, customStartAddress: "", useCustomEnd: false, customEndAddress: "" })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition bg-white text-sm">
                       <option value="">Select a location...</option>
                       {(() => {
                         const displayGroups = ["London", "UK", "International"];
@@ -678,7 +765,7 @@ export default function BookingForm({
                           {section.useCustomEnd && (<input type="text" value={section.customEndAddress || ""} onChange={(e) => updateSection(index, { customEndAddress: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition text-sm" placeholder="Enter your office or venue address" />)}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-text-secondary"><span className={`px-2 py-0.5 rounded-full font-medium ${isLoop && !section.useCustomEnd ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>{section.useCustomStart || section.useCustomEnd ? "Custom Route" : isLoop ? "Loop Route" : "A to B Route"}</span>{loc.routeType === "A to B" && !section.useCustomEnd && <span>Different start and end points</span>}</div>
-                        {(section.useCustomStart || section.useCustomEnd) && (<div className="animate-fade-in"><label className="block text-xs font-semibold text-text-primary mb-2">Venue Details</label><textarea rows={3} value={section.venueNotes || ""} onChange={(e) => updateSection(index, { venueNotes: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition text-sm resize-none" placeholder="How do we access the building? Do we need a pass? Will we meet in a meeting room or a public space like the canteen? Anything else we should know?" /></div>)}
+                        {(section.useCustomStart || section.useCustomEnd) && (<div className="animate-fade-in"><label className="block text-xs font-semibold text-text-primary mb-2">Venue Details</label><textarea data-field="venue-notes" rows={3} value={section.venueNotes || ""} onChange={(e) => updateSection(index, { venueNotes: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition text-sm resize-none" placeholder="How do we access the building? Do we need a pass? Will we meet in a meeting room or a public space like the canteen? Anything else we should know?" /></div>)}
                       </div>
                     )}
                   </div>
@@ -686,8 +773,8 @@ export default function BookingForm({
               })()}
               {section.type === "miscellaneous" && (<div>
                 <p className="text-xs text-text-secondary mb-2">Themed tasks broken into Easy (20pts), Medium (40pts) and Hard (50pts+). We will send you a draft copy.</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{MISC_THEMES.map((t) => (<label key={t.value} className={`py-2 px-2 rounded-lg text-xs font-medium transition border text-center cursor-pointer ${section.miscTheme === t.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input type="radio" name={`miscTheme-${index}`} value={t.value} checked={section.miscTheme === t.value} onChange={(e) => updateSection(index, { miscTheme: e.target.value, bespokeTheme: "" })} className="sr-only" />{t.label}</label>))}</div>
-                {section.miscTheme === "bespoke" && (<div className="mt-3 animate-fade-in"><input type="text" value={section.bespokeTheme || ""} onChange={(e) => updateSection(index, { bespokeTheme: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition text-sm" placeholder="e.g. Disney, 90s, or Football" /><p className="text-xs text-text-secondary mt-1">Can&apos;t be too specific - we need to fill between 30 and 40 tasks.</p></div>)}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{MISC_THEMES.map((t) => (<label key={t.value} className={`py-2 px-2 rounded-lg text-xs font-medium transition border text-center cursor-pointer ${section.miscTheme === t.value ? "bg-cta text-white border-cta" : "bg-white text-text-secondary border-border hover:border-cta/50"}`}><input data-field="misc-theme" type="radio" name={`miscTheme-${index}`} value={t.value} checked={section.miscTheme === t.value} onChange={(e) => updateSection(index, { miscTheme: e.target.value, bespokeTheme: "" })} className="sr-only" />{t.label}</label>))}</div>
+                {section.miscTheme === "bespoke" && (<div className="mt-3 animate-fade-in"><input data-field="bespoke-theme" type="text" value={section.bespokeTheme || ""} onChange={(e) => updateSection(index, { bespokeTheme: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition text-sm" placeholder="e.g. Disney, 90s, or Football" /><p className="text-xs text-text-secondary mt-1">Can&apos;t be too specific - we need to fill between 30 and 40 tasks.</p></div>)}
               </div>)}
               {section.type === "bespoke" && (() => {
                 const bespokeConfig = activeTaskSectionTypes.find((t) => t.id === "bespoke");
@@ -747,7 +834,7 @@ export default function BookingForm({
               {DURATIONS.map((d) => {
                 const isSelected = form.duration === d.value;
                 const isLocked = durationMode === "auto" && sectionCount < d.minSections;
-                return (<div key={d.value} className="relative group"><label className={`block p-4 rounded-xl border-2 text-center transition-all ${isLocked ? "opacity-40 cursor-not-allowed border-gray-200 bg-gray-50" : isSelected ? "border-cta bg-orange-50 cursor-pointer" : "border-border bg-white hover:border-cta/50 cursor-pointer"}`}><input type="radio" name="duration" value={d.value} checked={isSelected} onChange={(e) => { if (!isLocked) { setForm({ ...form, duration: e.target.value }); clearError("duration"); } }} className="sr-only" disabled={isLocked} /><span className="block text-xl font-bold text-text-primary">{d.total}</span><span className="block text-xs text-text-secondary mt-1">{d.gameTime} game time</span></label>{isLocked && (<div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none"><span className="hidden group-hover:block text-[10px] text-cta bg-white border border-cta/20 rounded px-2 py-0.5 shadow-sm whitespace-nowrap">Add more task sections to unlock</span></div>)}</div>);
+                return (<div key={d.value} className="relative group"><label className={`block p-4 rounded-xl border-2 text-center transition-all ${isLocked ? "opacity-40 cursor-not-allowed border-gray-200 bg-gray-50" : isSelected ? "border-cta bg-orange-50 cursor-pointer" : "border-border bg-white hover:border-cta/50 cursor-pointer"}`}><input data-field="duration" type="radio" name="duration" value={d.value} checked={isSelected} onChange={(e) => { if (!isLocked) { setForm({ ...form, duration: e.target.value }); clearError("duration"); } }} className="sr-only" disabled={isLocked} /><span className="block text-xl font-bold text-text-primary">{d.total}</span><span className="block text-xs text-text-secondary mt-1">{d.gameTime} game time</span></label>{isLocked && (<div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none"><span className="hidden group-hover:block text-[10px] text-cta bg-white border border-cta/20 rounded px-2 py-0.5 shadow-sm whitespace-nowrap">Add more task sections to unlock</span></div>)}</div>);
               })}
             </div>
           )}
@@ -777,10 +864,10 @@ export default function BookingForm({
         <p className="text-sm text-text-secondary mb-4">Would you like to reserve extra time around your event?</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           {[{ value: "", label: "None", desc: "Event time only" }, { value: "buffer", label: "Buffer", desc: "Block time either side" }, { value: "whole-day", label: "Whole Day", desc: "Block the entire day" }].map((mode) => (
-            <label key={mode.value} className={`block p-4 rounded-xl border-2 text-center transition-all cursor-pointer ${form.timeBlocking === mode.value ? "border-cta bg-orange-50" : "border-border bg-white hover:border-cta/50"}`}><input type="radio" name="timeBlocking" value={mode.value} checked={form.timeBlocking === mode.value} onChange={(e) => setForm({ ...form, timeBlocking: e.target.value as "" | "buffer" | "whole-day" })} className="sr-only" /><span className="block text-sm font-bold text-text-primary">{mode.label}</span><span className="block text-xs text-text-secondary mt-1">{mode.desc}</span></label>
+            <label key={mode.value} className={`block p-4 rounded-xl border-2 text-center transition-all cursor-pointer ${form.timeBlocking === mode.value ? "border-cta bg-orange-50" : "border-border bg-white hover:border-cta/50"}`}><input data-field="time-blocking" type="radio" name="timeBlocking" value={mode.value} checked={form.timeBlocking === mode.value} onChange={(e) => setForm({ ...form, timeBlocking: e.target.value as "" | "buffer" | "whole-day" })} className="sr-only" /><span className="block text-sm font-bold text-text-primary">{mode.label}</span><span className="block text-xs text-text-secondary mt-1">{mode.desc}</span></label>
           ))}
         </div>
-        {form.timeBlocking === "buffer" && (<div className="mt-4 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-2">Buffer (mins)</label><select value={form.bufferHours} onChange={(e) => setForm({ ...form, bufferHours: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition bg-white"><option value="30">30 mins</option><option value="60">60 mins</option><option value="90">90 mins</option></select></div>)}
+        {form.timeBlocking === "buffer" && (<div className="mt-4 animate-fade-in"><label className="block text-sm font-medium text-text-primary mb-2">Buffer (mins)</label><select data-field="buffer-hours" value={form.bufferHours} onChange={(e) => setForm({ ...form, bufferHours: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition bg-white"><option value="30">30 mins</option><option value="60">60 mins</option><option value="90">90 mins</option></select></div>)}
       </section>
     ),
     "add-ons": () => {
@@ -805,7 +892,7 @@ export default function BookingForm({
               const displayPrice = isFlat ? (addon.priceFlat ?? 0) : addon.pricePP;
               return (
                 <label key={addon.id} className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${checked ? "border-cta bg-orange-50" : "border-border bg-white hover:border-cta/50"}`}>
-                  <input type="checkbox" checked={checked} onChange={(e) => toggle(e.target.checked)} className="sr-only" />
+                  <input data-field={`addon-${addon.id}`} type="checkbox" checked={checked} onChange={(e) => toggle(e.target.checked)} className="sr-only" />
                   <div className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${checked ? "border-cta bg-cta" : "border-border"}`}>{checked && <FaCheck className="text-white text-[10px]" />}</div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
@@ -843,13 +930,23 @@ export default function BookingForm({
       </section>
     ),
     "message": () => (
-      <section key="message"><h2 className="text-lg font-bold text-text-primary mb-4">Tell Us About Your Event</h2><textarea rows={4} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition resize-none" placeholder={cfg.messagePlaceholder || "Anything else we should know?"} /></section>
+      <section key="message"><h2 className="text-lg font-bold text-text-primary mb-4">Tell Us About Your Event</h2><textarea data-field="message" rows={4} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-border focus:ring-2 focus:ring-cta focus:border-cta transition resize-none" placeholder={cfg.messagePlaceholder || "Anything else we should know?"} /></section>
     ),
   };
 
   // ─── Render ────────────────────────────────────────────────────────────────
+  const renderSection = (sec: typeof enabledSections[0]) => {
+    const renderer = sectionRenderers[sec.id];
+    if (!renderer) return null;
+    return (
+      <div key={sec.id} className="bg-surface/50 rounded-xl border border-border p-5 md:p-6" data-section={sec.id} data-section-title={sec.title}>
+        {renderer()}
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-form="booking" data-layout={isMultiStep ? "multi-step" : "single-page"}>
       {showModeToggle && publicEventPath && (
         <div className="flex gap-2 mb-8">
           <button type="button" onClick={() => handleModeSwitch("private")} className={`flex-1 py-3 px-4 rounded-lg font-semibold transition border text-center ${bookingMode === "private" ? "bg-primary text-white border-primary" : "bg-white text-text-secondary border-border hover:border-primary"}`} data-action="booking_mode_private">Private Event</button>
@@ -857,27 +954,60 @@ export default function BookingForm({
         </div>
       )}
 
-      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-start gap-3">
-        <FaCheck className="text-emerald-500 mt-0.5 flex-shrink-0" />
-        <div><p className="font-semibold text-emerald-800 text-sm">Book instantly, no waiting</p><p className="text-xs text-emerald-700 mt-0.5">Fill in the form below, pay securely via Stripe, and your event is confirmed straight away.</p></div>
-      </div>
+      {!isMultiStep && (
+        <>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-start gap-3" data-section="intro-banner">
+            <FaCheck className="text-emerald-500 mt-0.5 flex-shrink-0" />
+            <div><p className="font-semibold text-emerald-800 text-sm">Book instantly, no waiting</p><p className="text-xs text-emerald-700 mt-0.5">Fill in the form below, pay securely via Stripe, and your event is confirmed straight away.</p></div>
+          </div>
+          <div>
+            <button type="button" onClick={() => { const el = document.getElementById("field-date-time"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }} className="w-full flex items-center justify-between p-4 bg-surface rounded-xl border border-border hover:border-cta/50 transition" data-action="booking_check_availability">
+              <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-cta/10 flex items-center justify-center"><FaCalendarAlt className="text-cta" /></div><div className="text-left"><p className="font-semibold text-text-primary text-sm">Check availability</p><p className="text-xs text-text-secondary">Pick a date to see available time slots</p></div></div>
+              <FaArrowDown className="text-text-secondary" />
+            </button>
+          </div>
+        </>
+      )}
 
-      <div>
-        <button type="button" onClick={() => { const el = document.getElementById("field-date-time"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }} className="w-full flex items-center justify-between p-4 bg-surface rounded-xl border border-border hover:border-cta/50 transition" data-action="booking_check_availability_toggle">
-          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-cta/10 flex items-center justify-center"><FaCalendarAlt className="text-cta" /></div><div className="text-left"><p className="font-semibold text-text-primary text-sm">Check availability</p><p className="text-xs text-text-secondary">Pick a date to see available time slots</p></div></div>
-          <FaArrowDown className="text-text-secondary" />
-        </button>
-      </div>
+      {/* Multi-step progress bar */}
+      {isMultiStep && totalSteps > 0 && (
+        <div data-section="step-progress" className="space-y-3">
+          <div className="flex items-center justify-between text-xs text-text-secondary">
+            <span>Step {currentStep + 1} of {totalSteps}</span>
+            <span className="font-medium text-text-primary">{enabledSections[currentStep]?.title}</span>
+          </div>
+          <div className="flex gap-1.5">
+            {enabledSections.map((sec, i) => (
+              <button key={sec.id} type="button" onClick={() => { if (i < currentStep) setCurrentStep(i); }} className={`flex-1 h-2 rounded-full transition-all ${i < currentStep ? "bg-cta cursor-pointer" : i === currentStep ? "bg-cta" : "bg-border"}`} data-step={i} data-step-section={sec.id} title={sec.title} />
+            ))}
+          </div>
+        </div>
+      )}
 
-      <form onSubmit={handleSubmit} noValidate className="space-y-6">
-        {sortedSections.filter((s) => s.enabled && sectionRenderers[s.id]).map((sec) => {
-          const renderer = sectionRenderers[sec.id];
-          if (!renderer) return null;
-          return (<div key={sec.id} className="bg-surface/50 rounded-xl border border-border p-5 md:p-6">{renderer()}</div>);
-        })}
+      <form onSubmit={handleSubmit} noValidate className="space-y-6" data-form-step={isMultiStep ? currentStep : undefined}>
+        {/* Single-page: render all sections */}
+        {!isMultiStep && enabledSections.filter((s) => sectionRenderers[s.id]).map(renderSection)}
 
-        {groupSizeNum > 0 && (
-          <div className="p-5 bg-surface rounded-xl border border-border">
+        {/* Multi-step: render only the current section */}
+        {isMultiStep && enabledSections[currentStep] && sectionRenderers[enabledSections[currentStep].id] && renderSection(enabledSections[currentStep])}
+
+        {/* Multi-step: navigation buttons (not last step) */}
+        {isMultiStep && currentStep < totalSteps - 1 && (
+          <div className="flex gap-3" data-section="step-navigation">
+            {currentStep > 0 && (
+              <button type="button" onClick={handlePrevStep} className="flex-1 py-3 px-4 rounded-lg font-semibold transition border border-border text-text-secondary hover:border-cta/50 text-center" data-action="booking_step_back">
+                Back
+              </button>
+            )}
+            <button type="button" onClick={handleNextStep} className="flex-1 bg-cta text-white font-bold py-3 px-4 rounded-lg hover:bg-cta-dark transition text-center" data-action="booking_step_next">
+              Continue
+            </button>
+          </div>
+        )}
+
+        {/* Booking summary (single-page: always, multi-step: last step only) */}
+        {(!isMultiStep || currentStep === totalSteps - 1) && groupSizeNum > 0 && (
+          <div className="p-5 bg-surface rounded-xl border border-border" data-section="booking-summary">
             <h3 className="font-bold text-text-primary mb-3">Booking Summary</h3>
             <div className="space-y-2 text-sm">
               {selectedProduct && <div className="flex justify-between text-text-secondary"><span>{selectedProduct.name}</span></div>}
@@ -910,17 +1040,25 @@ export default function BookingForm({
           </div>
         )}
 
-        <div className="space-y-3">
-          {submitMessage && (<div className={`p-4 rounded-lg border text-sm font-medium ${submitMessage.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-800"}`}>{submitMessage.text}</div>)}
-          <button type="submit" disabled={submitting} className="w-full bg-cta text-white font-bold py-4 rounded-lg hover:bg-cta-dark transition disabled:opacity-50 disabled:cursor-not-allowed text-lg flex items-center justify-center gap-2" data-action="booking_pay_submit">
-            <FaLock className="text-sm" />
-            {submitting ? (canInstantBook ? "Redirecting to payment..." : "Submitting enquiry...") : canInstantBook ? (totalPence > 0 ? `Book & Pay Now ${formatPence(totalPence)}` : "Book & Pay Now") : "Submit Enquiry"}
-          </button>
-          <p className="text-center text-text-secondary text-xs flex items-center justify-center gap-1"><FaLock className="text-[10px]" /> {canInstantBook ? "Secure payment powered by Stripe" : "We will respond within 24 hours with a custom quote"}</p>
-        </div>
+        {/* Submit area (single-page: always, multi-step: last step only) */}
+        {(!isMultiStep || currentStep === totalSteps - 1) && (
+          <div className="space-y-3" data-section="submit">
+            {isMultiStep && currentStep > 0 && (
+              <button type="button" onClick={handlePrevStep} className="w-full py-3 px-4 rounded-lg font-semibold transition border border-border text-text-secondary hover:border-cta/50 text-center mb-2" data-action="booking_step_back">
+                Back
+              </button>
+            )}
+            {submitMessage && (<div className={`p-4 rounded-lg border text-sm font-medium ${submitMessage.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-800"}`} data-section="submit-message">{submitMessage.text}</div>)}
+            <button type="submit" disabled={submitting} className="w-full bg-cta text-white font-bold py-4 rounded-lg hover:bg-cta-dark transition disabled:opacity-50 disabled:cursor-not-allowed text-lg flex items-center justify-center gap-2" data-action="booking_submit">
+              <FaLock className="text-sm" />
+              {submitting ? (canInstantBook ? "Redirecting to payment..." : "Submitting enquiry...") : canInstantBook ? (totalPence > 0 ? `Book & Pay Now ${formatPence(totalPence)}` : "Book & Pay Now") : "Submit Enquiry"}
+            </button>
+            <p className="text-center text-text-secondary text-xs flex items-center justify-center gap-1"><FaLock className="text-[10px]" /> {canInstantBook ? "Secure payment powered by Stripe" : "We will respond within 24 hours with a custom quote"}</p>
+          </div>
+        )}
       </form>
 
-      <div className="mt-6 pt-6 border-t border-border text-center"><p className="text-text-secondary text-sm">Not ready to book? Still got questions?{" "}<a href={`mailto:${contactEmail}`} className="text-cta font-semibold hover:underline" data-action="booking_email_fallback">Send us a message</a></p></div>
+      <div className="mt-6 pt-6 border-t border-border text-center" data-section="fallback-contact"><p className="text-text-secondary text-sm">Not ready to book? Still got questions?{" "}<a href={`mailto:${contactEmail}`} className="text-cta font-semibold hover:underline" data-action="booking_email_fallback">Send us a message</a></p></div>
     </div>
   );
 }

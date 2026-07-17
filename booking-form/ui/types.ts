@@ -79,6 +79,8 @@ export type BookingConfig = {
   virtualPlatform?: VirtualPlatform;
   virtualPlatforms?: { value: VirtualPlatform; label: string }[];
   messagePlaceholder?: string;
+  /** Form layout: "single-page" renders all sections at once, "multi-step" shows one section per page with navigation. Default: "single-page" */
+  formLayout?: "single-page" | "multi-step";
   /** Dynamic pricing fields for admin configuration */
   pricingFields?: { id: string; label: string; value: string; category: "base" | "addon"; perPerson: boolean; mandatory?: boolean; pricingType?: "fixed" | "per-person" }[];
 };

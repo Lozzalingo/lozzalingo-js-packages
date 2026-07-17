@@ -60,14 +60,14 @@ export function EventGallery({ images, title }: EventGalleryProps) {
             <>
               <button
                 onClick={() => scrollRef.current?.scrollBy({ left: -320, behavior: "smooth" })}
-                className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full opacity-0 group-hover/gallery:opacity-100 transition-opacity"
+                className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full md:opacity-0 md:group-hover/gallery:opacity-100 transition-opacity"
                 data-action="gallery_scroll_left"
               >
                 <FaChevronLeft />
               </button>
               <button
                 onClick={() => scrollRef.current?.scrollBy({ left: 320, behavior: "smooth" })}
-                className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full opacity-0 group-hover/gallery:opacity-100 transition-opacity"
+                className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full md:opacity-0 md:group-hover/gallery:opacity-100 transition-opacity"
                 data-action="gallery_scroll_right"
               >
                 <FaChevronRight />
@@ -120,6 +120,8 @@ export function EventGallery({ images, title }: EventGalleryProps) {
 }
 
 function AutoScrollStrip({ scrollRef, isPaused, children }: { scrollRef: React.RefObject<HTMLDivElement>; isPaused: boolean; children: React.ReactNode }) {
+  const [isTouching, setIsTouching] = useState(false);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -128,7 +130,7 @@ function AutoScrollStrip({ scrollRef, isPaused, children }: { scrollRef: React.R
     const speed = 0.5;
 
     function tick() {
-      if (!isPaused && el) {
+      if (!isPaused && !isTouching && el) {
         el.scrollLeft += speed;
         const halfWidth = el.scrollWidth / 2;
         if (el.scrollLeft >= halfWidth) {
@@ -140,10 +142,38 @@ function AutoScrollStrip({ scrollRef, isPaused, children }: { scrollRef: React.R
 
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [isPaused, scrollRef]);
+  }, [isPaused, isTouching, scrollRef]);
+
+  // Resume auto-scroll 3 seconds after touch ends
+  useEffect(() => {
+    if (!isTouching) return;
+    // isTouching is set true on touchstart, cleared on touchend after a delay
+  }, [isTouching]);
+
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleTouchStart() {
+    if (resumeTimer.current) clearTimeout(resumeTimer.current);
+    setIsTouching(true);
+  }
+
+  function handleTouchEnd() {
+    resumeTimer.current = setTimeout(() => setIsTouching(false), 3000);
+  }
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => { if (resumeTimer.current) clearTimeout(resumeTimer.current); };
+  }, []);
 
   return (
-    <div ref={scrollRef as React.RefObject<HTMLDivElement>} className="flex gap-3 overflow-x-hidden py-1">
+    <div
+      ref={scrollRef as React.RefObject<HTMLDivElement>}
+      className="flex gap-3 overflow-x-auto md:overflow-x-hidden py-1 scroll-smooth snap-x snap-mandatory md:snap-none"
+      style={{ WebkitOverflowScrolling: "touch" }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {children}
     </div>
   );

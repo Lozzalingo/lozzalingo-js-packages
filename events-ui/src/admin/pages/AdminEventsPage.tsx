@@ -583,6 +583,7 @@ export function AdminEventsPage() {
     durations: [...DEFAULT_BOOKING_CONFIG.durations],
     durationDescription: DEFAULT_BOOKING_CONFIG.durationDescription || "Choose how long you'd like your event to be.",
     durationBreakdown: [...(DEFAULT_BOOKING_CONFIG.durationBreakdown || [])],
+    formLayout: "single-page" as "single-page" | "multi-step",
     eventFormat: DEFAULT_BOOKING_CONFIG.eventFormat || "in-person",
     showPublicMeetingSpace: DEFAULT_BOOKING_CONFIG.showPublicMeetingSpace !== false,
     virtualPlatforms: [...(DEFAULT_BOOKING_CONFIG.virtualPlatforms || [])],
@@ -671,6 +672,7 @@ export function AdminEventsPage() {
               durations: cfg.durations || [...DEFAULT_BOOKING_CONFIG.durations],
               durationDescription: cfg.durationDescription || DEFAULT_BOOKING_CONFIG.durationDescription || "",
               durationBreakdown: cfg.durationBreakdown || DEFAULT_BOOKING_CONFIG.durationBreakdown || [],
+              formLayout: cfg.formLayout || "single-page",
               eventFormat: cfg.eventFormat || DEFAULT_BOOKING_CONFIG.eventFormat || "in-person",
               showPublicMeetingSpace: cfg.showPublicMeetingSpace !== false,
               virtualPlatforms: cfg.virtualPlatforms || DEFAULT_BOOKING_CONFIG.virtualPlatforms || [],
@@ -744,6 +746,7 @@ export function AdminEventsPage() {
         durations: bookingConfig.durations,
         durationDescription: bookingConfig.durationDescription,
         durationBreakdown: bookingConfig.durationBreakdown,
+        formLayout: bookingConfig.formLayout,
         eventFormat: bookingConfig.eventFormat,
         showPublicMeetingSpace: bookingConfig.showPublicMeetingSpace,
         virtualPlatforms: bookingConfig.virtualPlatforms,
@@ -1141,6 +1144,7 @@ export function AdminEventsPage() {
         durations: bookingConfig.durations,
         durationDescription: bookingConfig.durationDescription,
         durationBreakdown: bookingConfig.durationBreakdown,
+        formLayout: bookingConfig.formLayout,
         eventFormat: bookingConfig.eventFormat,
         showPublicMeetingSpace: bookingConfig.showPublicMeetingSpace,
         virtualPlatforms: bookingConfig.virtualPlatforms,
@@ -3639,6 +3643,30 @@ export function AdminEventsPage() {
                           {showBookingSections ? "Hide Booking Sections" : "Manage Booking Sections"}
                         </button>
                       </div>
+                    </div>
+
+                    {/* Form Layout Toggle */}
+                    <div className="flex items-center gap-3 mb-4 p-3 bg-gray-900 rounded-lg border border-gray-700">
+                      <span className="text-xs text-gray-400 font-medium">Form Layout:</span>
+                      <div className="flex rounded-lg overflow-hidden border border-gray-600">
+                        <button
+                          onClick={() => setBookingConfig((prev) => ({ ...prev, formLayout: "single-page" }))}
+                          className={`px-3 py-1.5 text-xs font-medium transition ${bookingConfig.formLayout === "single-page" ? "bg-emerald-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white"}`}
+                          data-action="admin_form_layout_single_page"
+                        >
+                          Single Page
+                        </button>
+                        <button
+                          onClick={() => setBookingConfig((prev) => ({ ...prev, formLayout: "multi-step" }))}
+                          className={`px-3 py-1.5 text-xs font-medium transition ${bookingConfig.formLayout === "multi-step" ? "bg-emerald-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white"}`}
+                          data-action="admin_form_layout_multi_step"
+                        >
+                          Multi-Step
+                        </button>
+                      </div>
+                      <span className="text-[10px] text-gray-500">
+                        {bookingConfig.formLayout === "multi-step" ? "One section per page with progress bar" : "All sections visible at once"}
+                      </span>
                     </div>
 
                     {/* Summary view (shown when sections editor is closed) */}
