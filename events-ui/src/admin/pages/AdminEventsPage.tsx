@@ -46,7 +46,7 @@ import {
   Button,
 } from "../ui";
 import { DEFAULT_BOOKING_CONFIG } from "@lozzalingo/booking-form/defaults";
-import type { BookingAddOn } from "@lozzalingo/booking-form/types";
+import type { BookingAddOn, ProductPricing, EventFormat, VirtualPlatform } from "@lozzalingo/booking-form/types";
 import { configureStorage, uploadImage } from "@lozzalingo/storage/client";
 
 type Package = {
@@ -568,7 +568,7 @@ export function AdminEventsPage() {
     taskSectionTypes: DEFAULT_TASK_SECTION_TYPES as TaskSectionTypeConfig[],
     productTaskSectionTypes: {} as Record<string, TaskSectionTypeConfig[]>,
     productGroupTypes: {} as Record<string, string>,
-    productPricing: {} as Record<string, { pricePerPerson?: number; minPlayers?: number; minReserve?: number }>,
+    productPricing: {} as Record<string, ProductPricing>,
     whatsIncluded: "Professional BucketRace host\nPhysical handouts for your team\nTrophies for 1st, 2nd, and 3rd place\nA prize for first place\nDigital copy of team photos and videos",
     timeBlockingMode: "buffer",
     groupTypes: "corporate:Corporate\nhen:Hen\nbirthday:Birthday\nsten:Sten\nstag:Stag\nother:Other",
@@ -3914,7 +3914,7 @@ export function AdminEventsPage() {
                                                             <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mb-1 block">Default Format</label>
                                                             <div className="grid grid-cols-3 gap-2">
                                                               {[{ value: "in-person", label: "In Person", desc: "Venue address only" }, { value: "virtual", label: "Virtual", desc: "Zoom or Teams" }, { value: "customer-choice", label: "Customer Picks", desc: "In Person or Virtual" }].map((mode) => (
-                                                                <button key={mode.value} type="button" onClick={() => setBookingConfig({ ...bookingConfig, eventFormat: mode.value })} className={`p-2 rounded-lg border text-center transition text-xs ${bookingConfig.eventFormat === mode.value ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-600"}`}>
+                                                                <button key={mode.value} type="button" onClick={() => setBookingConfig({ ...bookingConfig, eventFormat: mode.value as EventFormat })} className={`p-2 rounded-lg border text-center transition text-xs ${bookingConfig.eventFormat === mode.value ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-600"}`}>
                                                                   <span className="block font-semibold">{mode.label}</span><span className="block text-[9px] text-gray-500 mt-0.5">{mode.desc}</span>
                                                                 </button>
                                                               ))}
@@ -3931,12 +3931,12 @@ export function AdminEventsPage() {
                                                               <label className="text-[10px] text-gray-400 font-semibold mb-1 block">Virtual Platforms</label>
                                                               {(bookingConfig.virtualPlatforms || []).map((vp: { value: string; label: string }, i: number) => (
                                                                 <div key={i} className="flex items-center gap-2 mb-1">
-                                                                  <input type="text" value={vp.value} onChange={(e) => { const items = [...(bookingConfig.virtualPlatforms || [])]; items[i] = { ...items[i], value: e.target.value }; setBookingConfig({ ...bookingConfig, virtualPlatforms: items }); }} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
+                                                                  <input type="text" value={vp.value} onChange={(e) => { const items = [...(bookingConfig.virtualPlatforms || [])]; items[i] = { ...items[i], value: e.target.value as VirtualPlatform }; setBookingConfig({ ...bookingConfig, virtualPlatforms: items }); }} className="w-24 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-emerald-500 outline-none" placeholder="value" />
                                                                   <input type="text" value={vp.label} onChange={(e) => { const items = [...(bookingConfig.virtualPlatforms || [])]; items[i] = { ...items[i], label: e.target.value }; setBookingConfig({ ...bookingConfig, virtualPlatforms: items }); }} className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:border-emerald-500 outline-none" placeholder="Label" />
                                                                   <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, virtualPlatforms: (bookingConfig.virtualPlatforms || []).filter((_: unknown, idx: number) => idx !== i) })} className="text-gray-500 hover:text-red-400 transition text-xs"><FaTrash /></button>
                                                                 </div>
                                                               ))}
-                                                              <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, virtualPlatforms: [...(bookingConfig.virtualPlatforms || []), { value: "new-platform", label: "New Platform" }] })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add platform</button>
+                                                              <button type="button" onClick={() => setBookingConfig({ ...bookingConfig, virtualPlatforms: [...(bookingConfig.virtualPlatforms || []), { value: "zoom" as VirtualPlatform, label: "New Platform" }] })} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs transition"><FaPlus className="text-[8px]" /> Add platform</button>
                                                             </div>
                                                           )}
                                                           {/* Per-product event format overrides */}
@@ -3949,7 +3949,7 @@ export function AdminEventsPage() {
                                                                   return (
                                                                     <div key={product.slug} className="flex items-center gap-2">
                                                                       <span className="text-xs text-white flex-1 truncate">{product.name}</span>
-                                                                      <select value={pp.eventFormat || ""} onChange={(e) => { const val = e.target.value || undefined; setBookingConfig({ ...bookingConfig, productPricing: { ...bookingConfig.productPricing, [product.slug]: { ...pp, eventFormat: val } } }); }} className="bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-[10px] text-white focus:border-emerald-500 outline-none">
+                                                                      <select value={pp.eventFormat || ""} onChange={(e) => { const val = (e.target.value || undefined) as EventFormat | undefined; setBookingConfig({ ...bookingConfig, productPricing: { ...bookingConfig.productPricing, [product.slug]: { ...pp, eventFormat: val } } }); }} className="bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-[10px] text-white focus:border-emerald-500 outline-none">
                                                                         <option value="">Default</option>
                                                                         <option value="in-person">In Person</option>
                                                                         <option value="virtual">Virtual</option>
