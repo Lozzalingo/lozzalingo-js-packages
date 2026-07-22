@@ -47,6 +47,7 @@ const DEFAULT_CONFIG = {
     purchases: false,
     pricing: false,
     restream: false,
+    ticker: false,
   },
 
   // Default route mount paths
@@ -74,6 +75,7 @@ const DEFAULT_CONFIG = {
     marketplace_sync: "/api/marketplace-sync",
     purchases: "/api/purchases",
     crm: "/api/crm",
+    ticker: "/api/recent-sales",
   },
 
   // CORS defaults
@@ -86,6 +88,7 @@ const DEFAULT_CONFIG = {
       "x-admin-secret",
       "x-admin-key",
       "x-api-key",
+      "x-ticker-key",
     ],
   },
 

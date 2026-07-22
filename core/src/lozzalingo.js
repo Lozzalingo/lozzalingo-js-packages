@@ -317,6 +317,9 @@ class Lozzalingo {
     this._registerOrders();
     this._registerMarketplaceSync();
     this._registerPurchases();
+
+    // Cross-site integrations
+    this._registerTicker();
   }
 
   _registerLogging() {
@@ -542,6 +545,38 @@ class Lozzalingo {
     if (!this.isEnabled("purchases")) return;
     this._tryRegister("purchases", () => {
       console.log("[Core] Purchases feature enabled");
+    });
+  }
+
+  _registerTicker() {
+    if (!this.isEnabled("ticker")) return;
+    this._tryRegister("ticker", () => {
+      const { createTickerRoutes } = require("@lozzalingo/ticker/server");
+
+      // Determine which adapters to use based on enabled features
+      const adapters = [];
+      if (this.isEnabled("orders")) adapters.push("orders");
+      if (this.isEnabled("bookings")) adapters.push("bookings");
+      if (this.isEnabled("purchases")) adapters.push("purchases");
+
+      // Check for subscription tracking on User model
+      const tickerConfig = this.config.ticker || {};
+      if (tickerConfig.includeSubscriptions) adapters.push("subscriptions");
+
+      // Allow a custom querySales function from config
+      const querySales = tickerConfig.querySales || null;
+
+      this.app.use(
+        this.config.routes.ticker,
+        createTickerRoutes({
+          brandName: this.config.site.name,
+          siteUrl: this.config.site.baseUrl,
+          adapter: querySales ? undefined : adapters,
+          querySales,
+          prisma: this.prisma,
+          limit: tickerConfig.limit || 5,
+        })
+      );
     });
   }
 

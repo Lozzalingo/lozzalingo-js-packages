@@ -1,0 +1,15 @@
+{
+  "name": "@lozzalingo/ticker",
+  "version": "1.0.0",
+  "description": "Recent sales ticker endpoint for laurence.computer homepage",
+  "private": true,
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./server": "./server/index.js"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.0.0",
+    "express": "^4.0.0 || ^5.0.0"
+  }
+}

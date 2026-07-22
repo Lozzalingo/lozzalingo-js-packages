@@ -13,12 +13,13 @@ import {
   FaWrench,
   FaGear,
   FaBars,
+  FaRightFromBracket,
 } from "react-icons/fa6";
 import { MdDashboard } from "react-icons/md";
 import { IoIosArrowDown, IoIosArrowUp } from "react-icons/io";
 import { IoClose } from "react-icons/io5";
 
-/* ── Types ─────────────────────────────────────────────────────────────── */
+/* -- Types ---------------------------------------------------------------- */
 
 export type NavSubItem = {
   path: string;
@@ -35,7 +36,7 @@ export type NavItem = {
   subItems?: NavSubItem[];
 };
 
-export type AdminSidebarProps = {
+export type UnifiedSidebarProps = {
   /** Brand name shown in the header, e.g. "Fat Big Quiz" */
   brandName: string;
   /**
@@ -45,19 +46,52 @@ export type AdminSidebarProps = {
    * Default: "blue"
    */
   accentColour?: string;
-  /** Site-specific nav items rendered ABOVE the core 9 */
+
+  /* -- Legacy props (backward compatible, admin-only mode) --------------- */
+
+  /** Site-specific nav items rendered ABOVE the core admin items (legacy mode) */
   customNavItems?: NavItem[];
   /** Override specific core items by label (e.g. replace "Blog" with a custom submenu) */
   coreNavOverrides?: Record<string, NavItem>;
   /** Hide specific core items by label */
   hideCore?: string[];
-  /** Content rendered below the nav (sign-out button, credits, etc.) */
+
+  /* -- New unified props ------------------------------------------------- */
+
+  /**
+   * User role. When provided alongside userNavItems, enables unified mode
+   * with separate user and admin sections.
+   * "admin" shows both user and admin sections.
+   * "user" shows only the user section.
+   */
+  role?: "admin" | "user";
+  /** Nav items for the user section (visible to all authenticated users) */
+  userNavItems?: NavItem[];
+  /** Nav items for the admin section (visible only when role === "admin") */
+  adminNavItems?: NavItem[];
+  /**
+   * URL prefix for active-state matching on user section items.
+   * Defaults to "/admin". Apps can set their own prefix, e.g. "/dashboard".
+   */
+  basePath?: string;
+
+  /* -- Common props ------------------------------------------------------ */
+
+  /** Content rendered below the nav (credits widget, etc.) */
   footerSlot?: React.ReactNode;
   /** Subtitle under the brand name (e.g. user email) */
   subtitle?: string;
+  /**
+   * Called when the user clicks the sign-out button.
+   * When provided, a sign-out button is rendered at the bottom of the sidebar.
+   */
+  onSignOut?: () => void;
 };
 
-/* ── Accent colour mapping (Tailwind-safe, no dynamic classes) ─────── */
+/** @deprecated Use UnifiedSidebarProps instead */
+export type AdminSidebarProps = UnifiedSidebarProps;
+
+/* -- Accent colour mapping (Tailwind-safe, no dynamic classes) ----------- */
 
 const ACCENT_CLASSES: Record<string, { active: string; border: string }> = {
   emerald: {
@@ -86,7 +120,7 @@ const ACCENT_CLASSES: Record<string, { active: string; border: string }> = {
   },
 };
 
-/* ── Core 9 nav items (always present unless hidden) ───────────────── */
+/* -- Core admin nav items (always present unless hidden) ----------------- */
 
 function getCoreNavItems(): NavItem[] {
   return [
@@ -147,17 +181,22 @@ function getCoreNavItems(): NavItem[] {
   ];
 }
 
-/* ── Component ─────────────────────────────────────────────────────── */
+/* -- Component ----------------------------------------------------------- */
 
-export function AdminSidebar({
+export function UnifiedSidebar({
   brandName,
   accentColour = "blue",
   customNavItems = [],
   coreNavOverrides = {},
   hideCore = [],
+  role,
+  userNavItems,
+  adminNavItems,
+  basePath = "/admin",
   footerSlot,
   subtitle,
-}: AdminSidebarProps) {
+  onSignOut,
+}: UnifiedSidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
@@ -170,6 +209,11 @@ export function AdminSidebar({
   });
 
   const accent = ACCENT_CLASSES[accentColour] || ACCENT_CLASSES.blue;
+
+  // Determine if we are in unified mode (role + userNavItems provided)
+  const isUnifiedMode = !!(role && userNavItems);
+
+  console.log("[UnifiedSidebar] Mode:", isUnifiedMode ? "unified" : "legacy", "| Role:", role || "n/a");
 
   // Responsive behaviour
   useEffect(() => {
@@ -196,13 +240,11 @@ export function AdminSidebar({
     .filter((item) => !hideCore.includes(item.label))
     .map((item) => coreNavOverrides[item.label] || item);
 
-  // Final nav: custom items first, then a divider concept, then core
-  const allItems = [...customNavItems, ...coreItems];
-
   // Active state check
   const isActive = (href?: string) => {
     if (!href) return false;
-    if (href === "/admin") return pathname === "/admin";
+    // Exact match for the base path root (e.g. "/admin" or "/dashboard")
+    if (href === basePath) return pathname === basePath;
     return pathname.startsWith(href);
   };
 
@@ -272,6 +314,23 @@ export function AdminSidebar({
     );
   };
 
+  // Render a list of nav items
+  const renderItems = (items: NavItem[]) =>
+    items.map((item, i) => (
+      <React.Fragment key={item.path || item.label || i}>
+        {item.subItems ? renderGroup(item) : renderLink(item)}
+      </React.Fragment>
+    ));
+
+  // Section heading label
+  const renderSectionLabel = (label: string) => (
+    <div className="px-5 pt-4 pb-2">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+        {label}
+      </p>
+    </div>
+  );
+
   return (
     <>
       {/* Mobile hamburger */}
@@ -315,32 +374,82 @@ export function AdminSidebar({
 
         {/* Navigation */}
         <nav className="flex-1 py-4 overflow-y-auto">
-          {/* Custom items */}
-          {customNavItems.length > 0 && (
+          {isUnifiedMode ? (
             <>
-              {customNavItems.map((item, i) => (
-                <React.Fragment key={item.path || item.label || i}>
-                  {item.subItems ? renderGroup(item) : renderLink(item)}
-                </React.Fragment>
-              ))}
-              {/* Divider between custom and core */}
-              <div className="my-3 mx-5 border-t border-gray-800" />
+              {/* USER SECTION - visible to all authenticated users */}
+              {userNavItems && userNavItems.length > 0 && (
+                <>
+                  {renderItems(userNavItems)}
+                </>
+              )}
+
+              {/* ADMIN SECTION - only visible when role === "admin" */}
+              {role === "admin" && (
+                <>
+                  <div className="my-3 mx-5 border-t border-gray-800" />
+                  {renderSectionLabel("Admin")}
+
+                  {/* Admin nav items passed via adminNavItems prop */}
+                  {adminNavItems && adminNavItems.length > 0 && (
+                    <>
+                      {renderItems(adminNavItems)}
+                      {/* Divider between admin nav items and core items */}
+                      {coreItems.length > 0 && (
+                        <div className="my-3 mx-5 border-t border-gray-800" />
+                      )}
+                    </>
+                  )}
+
+                  {/* Core admin items */}
+                  {renderItems(coreItems)}
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {/* LEGACY MODE - behaves exactly as the old AdminSidebar */}
+              {customNavItems.length > 0 && (
+                <>
+                  {renderItems(customNavItems)}
+                  {/* Divider between custom and core */}
+                  <div className="my-3 mx-5 border-t border-gray-800" />
+                </>
+              )}
+
+              {/* Core items */}
+              {renderItems(coreItems)}
             </>
           )}
-
-          {/* Core items */}
-          {coreItems.map((item, i) => (
-            <React.Fragment key={item.path || item.label || i}>
-              {item.subItems ? renderGroup(item) : renderLink(item)}
-            </React.Fragment>
-          ))}
         </nav>
 
         {/* Footer slot */}
         {footerSlot && (
           <div className="border-t border-gray-800">{footerSlot}</div>
         )}
+
+        {/* Sign-out button */}
+        {onSignOut && (
+          <div className={`${footerSlot ? "" : "border-t border-gray-800"} p-4`}>
+            <button
+              type="button"
+              onClick={() => {
+                console.log("[UnifiedSidebar] Sign out clicked");
+                onSignOut();
+              }}
+              className="w-full flex items-center gap-x-3 px-3 py-2.5 text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition cursor-pointer"
+            >
+              <FaRightFromBracket className="text-base text-gray-500" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        )}
       </div>
     </>
   );
 }
+
+/**
+ * @deprecated Use UnifiedSidebar instead. AdminSidebar is kept for backward
+ * compatibility and behaves identically when only legacy props are passed.
+ */
+export const AdminSidebar = UnifiedSidebar;
