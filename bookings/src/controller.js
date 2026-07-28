@@ -515,9 +515,45 @@ function createBookingController(prisma, options = {}) {
         take: 5,
       });
 
+      // Revenue by source
+      const revenueBySource = await prisma[modelName].groupBy({
+        by: ["source"],
+        _sum: { totalAmount: true },
+        _count: { id: true },
+      });
+
+      // Revenue by booking type (PRIVATE / PUBLIC / PLAY_TODAY)
+      const revenueByBookingType = await prisma[modelName].groupBy({
+        by: ["bookingType"],
+        _sum: { totalAmount: true },
+        _count: { id: true },
+      });
+
+      // Revenue by product (for in-person vs virtual breakdown)
+      const revenueByProduct = await prisma[modelName].groupBy({
+        by: ["productId"],
+        _sum: { totalAmount: true },
+        _count: { id: true },
+      });
+
       return res.json({
         stats: statusCounts,
         recentBookings,
+        revenueBySource: revenueBySource.map((r) => ({
+          source: r.source || "unknown",
+          revenue: r._sum.totalAmount || 0,
+          count: r._count.id,
+        })),
+        revenueByBookingType: revenueByBookingType.map((r) => ({
+          bookingType: r.bookingType,
+          revenue: r._sum.totalAmount || 0,
+          count: r._count.id,
+        })),
+        revenueByProduct: revenueByProduct.map((r) => ({
+          productId: r.productId || "unknown",
+          revenue: r._sum.totalAmount || 0,
+          count: r._count.id,
+        })),
       });
     } catch (error) {
       console.error("[Bookings] Failed to fetch dashboard:", error.message);
