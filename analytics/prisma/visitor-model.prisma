@@ -69,6 +69,9 @@ model Visitor {
   eventType        String?
   eventData        String?
 
+  // User identity (for attribution)
+  userId           String?
+
   // E-commerce tracking
   productViewed    String?
   addedToCart      Boolean   @default(false)
@@ -82,4 +85,5 @@ model Visitor {
   @@index([country])
   @@index([eventType])
   @@index([isBot])
+  @@index([userId])
 }

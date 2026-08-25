@@ -36,6 +36,10 @@ function createVisitorRoutes(prisma, options = {}) {
   router.get("/interactions", controller.getInteractionStats);
   router.get("/summary", controller.getSummary);
 
+  // Attribution & conversion endpoints
+  router.get("/attribution", controller.getAttribution);
+  router.get("/conversions", controller.getConversionMetrics);
+
   return router;
 }
 

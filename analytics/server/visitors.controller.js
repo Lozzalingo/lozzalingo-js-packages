@@ -304,6 +304,7 @@ function createVisitorController(prisma, options = {}) {
         utmSource, utmMedium, utmCampaign, utmContent, utmTerm,
         eventType = 'page_view', eventData,
         productViewed, addedToCart = false, checkoutStarted = false, purchaseComplete = false, orderValue,
+        userId,
         path, referrer, referrerCategory,
       } = req.body;
 
@@ -329,6 +330,7 @@ function createVisitorController(prisma, options = {}) {
           utmSource, utmMedium, utmCampaign, utmContent, utmTerm,
           eventType,
           eventData: eventData ? JSON.stringify(eventData) : null,
+          userId: userId || null,
           productViewed, addedToCart, checkoutStarted, purchaseComplete, orderValue,
         },
       });
@@ -401,7 +403,7 @@ function createVisitorController(prisma, options = {}) {
       const ip = requestIp.getClientIp(req) || 'unknown';
       const {
         eventType, eventData, productViewed, addedToCart,
-        checkoutStarted, purchaseComplete, orderValue, path,
+        checkoutStarted, purchaseComplete, orderValue, path, userId,
       } = req.body;
 
       const recentVisitor = await prisma.visitor.findFirst({
@@ -421,6 +423,7 @@ function createVisitorController(prisma, options = {}) {
           checkoutStarted: checkoutStarted || false,
           purchaseComplete: purchaseComplete || false,
           orderValue,
+          userId: userId || null,
           sessionId: recentVisitor?.sessionId,
           fingerprint: recentVisitor?.fingerprint,
         },
@@ -1081,10 +1084,342 @@ function createVisitorController(prisma, options = {}) {
     }
   };
 
+  /**
+   * Server-side conversion tracking.
+   * Called from app server code (not a route handler) to record a purchase
+   * and link it back to the visitor session for attribution.
+   *
+   * @param {object} params
+   * @param {string} params.userId - The authenticated user's ID
+   * @param {number} params.orderValue - Order total in the site's currency
+   * @param {string} [params.productId] - Product or plan identifier
+   * @param {string} [params.sessionId] - Browser session ID (if available)
+   * @param {string} [params.fingerprint] - Device fingerprint (if available)
+   * @param {object} [params.metadata] - Extra data to store in eventData
+   * @returns {Promise<object>} The created Visitor record
+   */
+  const trackConversion = async ({
+    userId,
+    orderValue,
+    productId,
+    sessionId,
+    fingerprint,
+    metadata,
+  }) => {
+    try {
+      // Try to find the most recent visitor record for this user to inherit attribution
+      let attribution = {};
+      if (userId) {
+        const recentVisit = await prisma.visitor.findFirst({
+          where: { userId, isBot: { not: true } },
+          orderBy: { timestamp: 'desc' },
+          select: {
+            ip: true, referrer: true, referrerCategory: true,
+            utmSource: true, utmMedium: true, utmCampaign: true,
+            utmContent: true, utmTerm: true,
+            sessionId: true, fingerprint: true,
+            country: true, city: true, deviceType: true,
+          },
+        });
+        if (recentVisit) {
+          attribution = recentVisit;
+        }
+      }
+
+      // Also try matching by fingerprint if no userId match
+      if (!attribution.ip && fingerprint) {
+        const fpVisit = await prisma.visitor.findFirst({
+          where: { fingerprint, isBot: { not: true } },
+          orderBy: { timestamp: 'desc' },
+          select: {
+            ip: true, referrer: true, referrerCategory: true,
+            utmSource: true, utmMedium: true, utmCampaign: true,
+            utmContent: true, utmTerm: true,
+            sessionId: true, fingerprint: true,
+            country: true, city: true, deviceType: true,
+          },
+        });
+        if (fpVisit) {
+          attribution = fpVisit;
+        }
+      }
+
+      const visitor = await prisma.visitor.create({
+        data: {
+          ip: attribution.ip || 'server',
+          path: '/conversion',
+          eventType: 'purchase',
+          purchaseComplete: true,
+          orderValue: orderValue || 0,
+          productViewed: productId || null,
+          userId,
+          sessionId: sessionId || attribution.sessionId || null,
+          fingerprint: fingerprint || attribution.fingerprint || null,
+          referrer: attribution.referrer || null,
+          referrerCategory: attribution.referrerCategory || null,
+          utmSource: attribution.utmSource || null,
+          utmMedium: attribution.utmMedium || null,
+          utmCampaign: attribution.utmCampaign || null,
+          utmContent: attribution.utmContent || null,
+          utmTerm: attribution.utmTerm || null,
+          country: attribution.country || null,
+          city: attribution.city || null,
+          deviceType: attribution.deviceType || null,
+          eventData: metadata ? JSON.stringify(metadata) : null,
+        },
+      });
+
+      console.log("[Analytics] Conversion tracked:", { userId, orderValue, visitorId: visitor.id });
+      return visitor;
+    } catch (error) {
+      console.error("[Analytics] Error tracking conversion:", error);
+      throw error;
+    }
+  };
+
+  /**
+   * GET /attribution?userId=X
+   * Returns the attribution chain for a specific user - what brought them to the site,
+   * their first touch, last touch before purchase, and all UTM data.
+   */
+  const getAttribution = async (req, res) => {
+    try {
+      const { userId } = req.query;
+      if (!userId) {
+        return res.status(400).json({ error: "userId query parameter is required" });
+      }
+
+      // First touch - earliest visit from this user
+      const firstTouch = await prisma.visitor.findFirst({
+        where: { userId, isBot: { not: true } },
+        orderBy: { timestamp: 'asc' },
+        select: {
+          referrer: true, referrerCategory: true,
+          utmSource: true, utmMedium: true, utmCampaign: true,
+          utmContent: true, utmTerm: true,
+          path: true, timestamp: true, deviceType: true,
+          country: true, city: true,
+        },
+      });
+
+      // Last touch before conversion - most recent non-purchase visit
+      const lastTouch = await prisma.visitor.findFirst({
+        where: {
+          userId,
+          isBot: { not: true },
+          eventType: { not: 'purchase' },
+        },
+        orderBy: { timestamp: 'desc' },
+        select: {
+          referrer: true, referrerCategory: true,
+          utmSource: true, utmMedium: true, utmCampaign: true,
+          utmContent: true, utmTerm: true,
+          path: true, timestamp: true, deviceType: true,
+        },
+      });
+
+      // All conversions for this user
+      const conversions = await prisma.visitor.findMany({
+        where: { userId, purchaseComplete: true },
+        orderBy: { timestamp: 'desc' },
+        select: {
+          id: true, orderValue: true, productViewed: true,
+          referrer: true, referrerCategory: true,
+          utmSource: true, utmCampaign: true,
+          timestamp: true, eventData: true,
+        },
+      });
+
+      // Total visits and page views
+      const totalVisits = await prisma.visitor.count({
+        where: { userId, isBot: { not: true } },
+      });
+
+      // Unique sessions
+      const sessions = await prisma.visitor.groupBy({
+        by: ['sessionId'],
+        where: { userId, isBot: { not: true }, sessionId: { not: null } },
+      });
+
+      // All referrer sources for this user (multi-touch)
+      const touchpoints = await prisma.visitor.groupBy({
+        by: ['referrerCategory'],
+        where: {
+          userId,
+          isBot: { not: true },
+          referrerCategory: { not: null, notIn: ['Direct'] },
+        },
+        _count: { referrerCategory: true },
+        orderBy: { _count: { referrerCategory: 'desc' } },
+      });
+
+      const totalRevenue = conversions.reduce((sum, c) => sum + (c.orderValue || 0), 0);
+
+      res.json({
+        userId,
+        firstTouch: firstTouch || null,
+        lastTouch: lastTouch || null,
+        conversions: conversions.map(c => ({
+          id: c.id,
+          orderValue: c.orderValue,
+          product: c.productViewed,
+          referrer: c.referrerCategory,
+          utmSource: c.utmSource,
+          utmCampaign: c.utmCampaign,
+          date: c.timestamp,
+          metadata: c.eventData ? JSON.parse(c.eventData) : null,
+        })),
+        totalRevenue,
+        totalConversions: conversions.length,
+        totalVisits,
+        totalSessions: sessions.length,
+        touchpoints: touchpoints.map(t => ({
+          source: t.referrerCategory,
+          count: t._count.referrerCategory,
+        })),
+      });
+    } catch (error) {
+      console.error("[Analytics] Error getting attribution:", error);
+      res.status(500).json({ error: "Failed to get attribution data" });
+    }
+  };
+
+  /**
+   * GET /conversions?timeRange=30d
+   * Returns aggregate conversion metrics over a time period.
+   * Supports: 7d, 14d, 30d, 90d, all
+   */
+  const getConversionMetrics = async (req, res) => {
+    try {
+      const { timeRange = '30d' } = req.query;
+
+      // Parse time range
+      let startDate;
+      const match = timeRange.match(/^(\d+)d$/);
+      if (match) {
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - parseInt(match[1]));
+        startDate.setHours(0, 0, 0, 0);
+      } else if (timeRange === 'all') {
+        startDate = new Date(0);
+      } else {
+        startDate = getStartDate(timeRange);
+      }
+
+      const whereClause = { timestamp: { gte: startDate }, isBot: { not: true } };
+
+      // Total conversions and revenue
+      const purchaseCount = await prisma.visitor.count({
+        where: { ...whereClause, purchaseComplete: true },
+      });
+
+      const revenueAgg = await prisma.visitor.aggregate({
+        _sum: { orderValue: true },
+        _avg: { orderValue: true },
+        where: { ...whereClause, purchaseComplete: true },
+      });
+
+      // Unique converting users
+      const convertingUsers = await prisma.visitor.groupBy({
+        by: ['userId'],
+        where: { ...whereClause, purchaseComplete: true, userId: { not: null } },
+      });
+
+      // Total unique visitors in the period
+      const totalUniqueVisitors = await prisma.visitor.groupBy({
+        by: ['fingerprint'],
+        where: { ...whereClause, fingerprint: { not: null } },
+      });
+
+      // Conversion rate (purchases / unique visitors)
+      const conversionRate = totalUniqueVisitors.length > 0
+        ? ((convertingUsers.length / totalUniqueVisitors.length) * 100).toFixed(2)
+        : '0.00';
+
+      // Revenue by referrer source
+      const revenueBySource = await prisma.visitor.groupBy({
+        by: ['referrerCategory'],
+        where: { ...whereClause, purchaseComplete: true, referrerCategory: { not: null } },
+        _sum: { orderValue: true },
+        _count: { referrerCategory: true },
+        orderBy: { _sum: { orderValue: 'desc' } },
+      });
+
+      // Revenue by UTM campaign
+      const revenueByCampaign = await prisma.visitor.groupBy({
+        by: ['utmCampaign'],
+        where: { ...whereClause, purchaseComplete: true, utmCampaign: { not: null } },
+        _sum: { orderValue: true },
+        _count: { utmCampaign: true },
+        orderBy: { _sum: { orderValue: 'desc' } },
+        take: 20,
+      });
+
+      // Revenue by product
+      const revenueByProduct = await prisma.visitor.groupBy({
+        by: ['productViewed'],
+        where: { ...whereClause, purchaseComplete: true, productViewed: { not: null } },
+        _sum: { orderValue: true },
+        _count: { productViewed: true },
+        orderBy: { _sum: { orderValue: 'desc' } },
+        take: 20,
+      });
+
+      // Daily conversion trend
+      const conversions = await prisma.visitor.findMany({
+        where: { ...whereClause, purchaseComplete: true },
+        select: { timestamp: true, orderValue: true },
+        orderBy: { timestamp: 'asc' },
+      });
+
+      const dailyTrend = {};
+      conversions.forEach(c => {
+        const date = c.timestamp.toISOString().split('T')[0];
+        if (!dailyTrend[date]) {
+          dailyTrend[date] = { count: 0, revenue: 0 };
+        }
+        dailyTrend[date].count++;
+        dailyTrend[date].revenue += c.orderValue || 0;
+      });
+
+      res.json({
+        timeRange,
+        totalConversions: purchaseCount,
+        totalRevenue: revenueAgg._sum.orderValue || 0,
+        averageOrderValue: Math.round((revenueAgg._avg.orderValue || 0) * 100) / 100,
+        uniqueConvertingUsers: convertingUsers.length,
+        totalUniqueVisitors: totalUniqueVisitors.length,
+        conversionRate,
+        revenueBySource: revenueBySource.map(r => ({
+          source: r.referrerCategory,
+          revenue: r._sum.orderValue || 0,
+          conversions: r._count.referrerCategory,
+        })),
+        revenueByCampaign: revenueByCampaign.map(r => ({
+          campaign: r.utmCampaign,
+          revenue: r._sum.orderValue || 0,
+          conversions: r._count.utmCampaign,
+        })),
+        revenueByProduct: revenueByProduct.map(r => ({
+          product: r.productViewed,
+          revenue: r._sum.orderValue || 0,
+          conversions: r._count.productViewed,
+        })),
+        dailyTrend: Object.entries(dailyTrend)
+          .map(([date, data]) => ({ date, ...data }))
+          .sort((a, b) => a.date.localeCompare(b.date)),
+      });
+    } catch (error) {
+      console.error("[Analytics] Error getting conversion metrics:", error);
+      res.status(500).json({ error: "Failed to get conversion metrics" });
+    }
+  };
+
   return {
     trackView,
     updateVisitor,
     trackEvent,
+    trackConversion,
     getVisitorChange,
     getOverviewStats,
     getDeviceStats,
@@ -1097,6 +1432,8 @@ function createVisitorController(prisma, options = {}) {
     getBotStats,
     getInteractionStats,
     getSummary,
+    getAttribution,
+    getConversionMetrics,
   };
 }
 
