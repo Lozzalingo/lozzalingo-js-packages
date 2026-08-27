@@ -135,7 +135,7 @@ export default function SubscribePopup({
     if (!form.privacyAccepted) newErrors.privacyAccepted = 'You must agree to the privacy policy';
 
     if (Object.keys(newErrors).length > 0) {
-      console.error('[SubscribePopup] Validation failed:', newErrors);
+      console.log('[SubscribePopup] Validation failed:', newErrors);
       setErrors(newErrors);
       return;
     }
