@@ -48,6 +48,7 @@ const DEFAULT_CONFIG = {
     pricing: false,
     restream: false,
     ticker: false,
+    ads: false,
   },
 
   // Default route mount paths
@@ -76,6 +77,7 @@ const DEFAULT_CONFIG = {
     purchases: "/api/purchases",
     crm: "/api/crm",
     ticker: "/api/recent-sales",
+    ads: "/api/products",
   },
 
   // CORS defaults
@@ -135,6 +137,15 @@ const DEFAULT_CONFIG = {
 
   experiences: {
     // Standard config
+  },
+
+  logging: {
+    errorDigest: {
+      enabled: true,
+      recipientEmail: null, // Falls back to ADMIN_EMAIL env var, then laurencedotcomputer@gmail.com
+      cronHour: 21, // 24h format, in the configured timezone
+      timezone: "Europe/London",
+    },
   },
 
   external_api: {

@@ -253,6 +253,28 @@ class Lozzalingo {
       });
     });
 
+    // Error digest service (needs logging + email)
+    if (this.isEnabled("logging") && this.isEnabled("email") && this.services.email) {
+      try {
+        const digestConfig = (this.config.logging && this.config.logging.errorDigest) || {};
+        if (digestConfig.enabled !== false) {
+          const { createErrorDigestService } = require("@lozzalingo/logging/server");
+          this.services.errorDigest = createErrorDigestService(this.prisma, this.services.email, {
+            recipientEmail: digestConfig.recipientEmail || process.env.ADMIN_EMAIL || "laurencedotcomputer@gmail.com",
+            brandName: (this.config.email && this.config.email.brandName) || this.config.site.name,
+            style: (this.config.email && this.config.email.style) || {},
+            cronHour: digestConfig.cronHour != null ? digestConfig.cronHour : 21,
+            timezone: digestConfig.timezone || "Europe/London",
+          });
+          this.services.errorDigest.startErrorDigestCron();
+        }
+      } catch (err) {
+        if (err.code !== "MODULE_NOT_FOUND") {
+          console.error("[Core] Failed to create error digest service:", err.message);
+        }
+      }
+    }
+
     // Storage service
     this._tryCreate("storage", () => {
       const { createStorageService } = require("@lozzalingo/storage/server");
@@ -320,6 +342,7 @@ class Lozzalingo {
 
     // Cross-site integrations
     this._registerTicker();
+    this._registerAds();
   }
 
   _registerLogging() {
@@ -563,8 +586,9 @@ class Lozzalingo {
       const tickerConfig = this.config.ticker || {};
       if (tickerConfig.includeSubscriptions) adapters.push("subscriptions");
 
-      // Allow a custom querySales function from config
+      // Allow custom query functions from config
       const querySales = tickerConfig.querySales || null;
+      const querySummary = tickerConfig.querySummary || null;
 
       this.app.use(
         this.config.routes.ticker,
@@ -573,8 +597,28 @@ class Lozzalingo {
           siteUrl: this.config.site.baseUrl,
           adapter: querySales ? undefined : adapters,
           querySales,
+          querySummary,
           prisma: this.prisma,
           limit: tickerConfig.limit || 5,
+          currency: tickerConfig.currency || "GBP",
+        })
+      );
+    });
+  }
+
+  _registerAds() {
+    if (!this.isEnabled("ads")) return;
+    this._tryRegister("ads", () => {
+      const { createAdsRoutes } = require("@lozzalingo/ads/server");
+      const adsConfig = this.config.ads || {};
+
+      this.app.use(
+        this.config.routes.ads,
+        createAdsRoutes(this.prisma, {
+          modelName: adsConfig.modelName || "merchProduct",
+          shopName: adsConfig.shopName || this.config.site.name,
+          baseUrl: this.config.site.baseUrl || process.env.FRONTEND_URL,
+          productUrlPattern: adsConfig.productUrlPattern || "/shop/{id}",
         })
       );
     });
