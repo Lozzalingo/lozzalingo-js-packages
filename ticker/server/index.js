@@ -1,10 +1,10 @@
 /**
  * @lozzalingo/ticker - Server Routes
  *
- * GET /api/recent-sales
+ * GET /api/recent-sales   - 5 most recent sales for the homepage ticker
+ * GET /api/sales-summary  - aggregate revenue/order stats for the leaderboard
  *
- * Returns the 5 most recent paid/completed sales in a standard format.
- * Protected by X-Ticker-Key header matching TICKER_API_KEY env var.
+ * Both endpoints are protected by X-Ticker-Key header matching TICKER_API_KEY env var.
  * Filters out test purchases from known internal emails.
  *
  * Usage:
@@ -208,6 +208,150 @@ const ADAPTERS = {
   subscriptions: querySubscriptions,
 };
 
+// ── Summary Adapters ─────────────────────────────────────────────────────────
+
+/**
+ * Orders summary - aggregate revenue and count from the Order model.
+ */
+async function summaryOrders(prisma) {
+  console.log("[Ticker] Summarising orders");
+  try {
+    const result = await prisma.order.aggregate({
+      where: {
+        status: "paid",
+        customerEmail: { notIn: TEST_EMAILS },
+      },
+      _sum: { totalAmount: true },
+      _count: { id: true },
+      _min: { createdAt: true },
+    });
+    return {
+      revenue: result._sum.totalAmount || 0,
+      count: result._count.id || 0,
+      firstDate: result._min.createdAt || null,
+    };
+  } catch (err) {
+    console.error("[Ticker] Error summarising orders:", err);
+    return { revenue: 0, count: 0, firstDate: null };
+  }
+}
+
+/**
+ * Bookings summary - aggregate from the Booking model.
+ * Handles both totalAmount (BucketRace) and totalPrice (Kalluna) field names.
+ */
+async function summaryBookings(prisma) {
+  console.log("[Ticker] Summarising bookings");
+  try {
+    // Determine which field the schema uses for total price
+    const paidStatuses = ["PAID", "DEPOSIT_PAID", "COMPLETED"];
+    const where = {
+      status: { in: paidStatuses },
+      AND: [
+        { customerEmail: { notIn: TEST_EMAILS } },
+      ],
+    };
+
+    // Try totalAmount first (BucketRace), fall back to totalPrice (Kalluna)
+    let result;
+    try {
+      result = await prisma.booking.aggregate({
+        where,
+        _sum: { totalAmount: true },
+        _count: { id: true },
+        _min: { createdAt: true },
+      });
+      return {
+        revenue: result._sum.totalAmount || 0,
+        count: result._count.id || 0,
+        firstDate: result._min.createdAt || null,
+      };
+    } catch {
+      // totalAmount field doesn't exist, try totalPrice
+      result = await prisma.booking.aggregate({
+        where,
+        _sum: { totalPrice: true },
+        _count: { id: true },
+        _min: { createdAt: true },
+      });
+      return {
+        revenue: result._sum.totalPrice || 0,
+        count: result._count.id || 0,
+        firstDate: result._min.createdAt || null,
+      };
+    }
+  } catch (err) {
+    console.error("[Ticker] Error summarising bookings:", err);
+    return { revenue: 0, count: 0, firstDate: null };
+  }
+}
+
+/**
+ * Purchases summary - aggregate from the Purchase model (digital products).
+ * Joins to Product to get individual prices since Purchase has no total field.
+ */
+async function summaryPurchases(prisma) {
+  console.log("[Ticker] Summarising purchases");
+  try {
+    const purchases = await prisma.purchase.findMany({
+      where: {
+        status: "completed",
+        email: { notIn: TEST_EMAILS },
+      },
+      include: { product: { select: { price: true } } },
+    });
+    const revenue = purchases.reduce((sum, p) => {
+      // Product price may be in pounds (Float) or pence (Int) depending on schema
+      const price = p.product?.price || 0;
+      // If price looks like pounds (has decimals or < 100 for reasonable products), convert to pence
+      const pence = price < 500 ? Math.round(price * 100) : price;
+      return sum + pence;
+    }, 0);
+
+    // Get the earliest purchase date
+    const firstPurchase = purchases.length > 0
+      ? purchases.reduce((earliest, p) => (new Date(p.createdAt) < new Date(earliest.createdAt) ? p : earliest))
+      : null;
+
+    return {
+      revenue,
+      count: purchases.length,
+      firstDate: firstPurchase?.createdAt || null,
+    };
+  } catch (err) {
+    console.error("[Ticker] Error summarising purchases:", err);
+    return { revenue: 0, count: 0, firstDate: null };
+  }
+}
+
+/**
+ * Subscriptions summary - count active subscriptions.
+ * Revenue is not tracked in the User model, so we report count only.
+ */
+async function summarySubscriptions(prisma) {
+  console.log("[Ticker] Summarising subscriptions");
+  try {
+    const count = await prisma.user.count({
+      where: {
+        subscriptionStatus: "active",
+        stripeSubscriptionId: { not: null },
+        email: { notIn: TEST_EMAILS },
+      },
+    });
+    return { revenue: 0, count, firstDate: null };
+  } catch (err) {
+    console.error("[Ticker] Error summarising subscriptions:", err);
+    return { revenue: 0, count: 0, firstDate: null };
+  }
+}
+
+const SUMMARY_ADAPTERS = {
+  orders: summaryOrders,
+  bookings: summaryBookings,
+  purchases: summaryPurchases,
+  subscriptions: summarySubscriptions,
+};
+
 // ── Route Factory ────────────────────────────────────────────────────────────
 
 /**
@@ -222,6 +366,8 @@ const ADAPTERS = {
  * @param {string|string[]} [options.adapter] - Built-in adapter name(s): "orders" | "bookings" | "purchases" | "subscriptions"
  * @param {import('@prisma/client').PrismaClient} [options.prisma] - Required when using adapter
  * @param {number} [options.limit=5] - Max number of results to return
+ * @param {Function} [options.querySummary] - Custom async function for /summary: (prisma) => { total_revenue_pence, total_orders, first_sale_date }
+ * @param {string} [options.currency="GBP"] - Currency code for summary response
  * @returns {express.Router}
  */
 function createTickerRoutes(options = {}) {
@@ -229,9 +375,11 @@ function createTickerRoutes(options = {}) {
     brandName = "Unknown",
     siteUrl = "https://example.com",
     querySales,
+    querySummary,
     adapter,
     prisma,
     limit = 5,
+    currency = "GBP",
   } = options;
 
   const router = express.Router();
@@ -290,7 +438,66 @@ function createTickerRoutes(options = {}) {
     }
   });
 
+  // ── GET /summary - aggregate stats for the leaderboard ──────────────────
+
+  router.get("/summary", tickerAuth, async (req, res) => {
+    try {
+      console.log("[Ticker] Summary request received for", brandName);
+
+      let totalRevenue = 0;
+      let totalOrders = 0;
+      let firstDate = null;
+
+      if (querySummary) {
+        // Custom summary function
+        const result = await querySummary(prisma);
+        totalRevenue = result.total_revenue_pence || 0;
+        totalOrders = result.total_orders || 0;
+        firstDate = result.first_sale_date || null;
+      } else if (adapter) {
+        // Built-in summary adapters
+        const adapterNames = Array.isArray(adapter) ? adapter : [adapter];
+
+        for (const name of adapterNames) {
+          const summaryFn = SUMMARY_ADAPTERS[name];
+          if (!summaryFn) {
+            console.warn("[Ticker] No summary adapter for:", name);
+            continue;
+          }
+          if (!prisma) {
+            console.error("[Ticker] Prisma client required for summary adapter:", name);
+            continue;
+          }
+          const result = await summaryFn(prisma);
+          totalRevenue += result.revenue;
+          totalOrders += result.count;
+          // Track the earliest sale date across all adapters
+          if (result.firstDate) {
+            const d = new Date(result.firstDate);
+            if (!firstDate || d < new Date(firstDate)) {
+              firstDate = result.firstDate;
+            }
+          }
+        }
+      }
+
+      const summary = {
+        brand: brandName,
+        total_revenue_pence: totalRevenue,
+        total_orders: totalOrders,
+        first_sale_date: firstDate ? formatDate(firstDate) : null,
+        currency: currency,
+      };
+
+      console.log("[Ticker] Summary for", brandName, ":", totalOrders, "orders,", totalRevenue, "pence");
+      return res.json(summary);
+    } catch (err) {
+      console.error("[Ticker] Error processing summary request:", err);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   return router;
 }
 
-module.exports = { createTickerRoutes, tickerAuth, ADAPTERS };
+module.exports = { createTickerRoutes, tickerAuth, ADAPTERS, SUMMARY_ADAPTERS };

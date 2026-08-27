@@ -171,24 +171,32 @@ function createErrorDigestService(prisma, emailService, options = {}) {
   let _lastDigestDate = null;
 
   /**
-   * Query today's errors and send the digest email.
-   * Returns { sent, errorCount, criticalCount } or { sent: false, reason }.
+   * Query errors and send the digest email.
+   * @param {object} [sendOptions]
+   * @param {number} [sendOptions.hoursBack] - Hours to look back (default: since start of today)
+   * @returns {{ sent, errorCount, criticalCount } | { sent: false, reason }}
    */
-  async function sendErrorDigest() {
+  async function sendErrorDigest(sendOptions = {}) {
     try {
-      const startOfDay = getStartOfTodayInTimezone(timezone);
+      let since;
+      if (sendOptions.hoursBack) {
+        since = new Date(Date.now() - sendOptions.hoursBack * 60 * 60 * 1000);
+      } else {
+        since = getStartOfTodayInTimezone(timezone);
+      }
 
       const errors = await prisma.appLog.findMany({
         where: {
           level: { in: ["ERROR", "CRITICAL"] },
-          timestamp: { gte: startOfDay },
+          timestamp: { gte: since },
         },
         orderBy: [{ level: "asc" }, { timestamp: "desc" }],
         // CRITICAL sorts before ERROR alphabetically
       });
 
       if (errors.length === 0) {
-        console.log("[ErrorDigest] No errors today, skipping digest");
+        const period = sendOptions.hoursBack ? `last ${sendOptions.hoursBack}h` : "today";
+        console.log(`[ErrorDigest] No errors ${period}, skipping digest`);
         return { sent: false, reason: "no_errors" };
       }
 
@@ -203,7 +211,8 @@ function createErrorDigestService(prisma, emailService, options = {}) {
         month: "short",
       });
 
-      const subject = `[${brandName}] Error Digest: ${errors.length} issue${errors.length !== 1 ? "s" : ""}${criticalCount > 0 ? ` (${criticalCount} critical)` : ""} - ${dateStr}`;
+      const periodLabel = sendOptions.hoursBack ? ` (last ${sendOptions.hoursBack}h)` : "";
+      const subject = `[${brandName}] Error Digest: ${errors.length} issue${errors.length !== 1 ? "s" : ""}${criticalCount > 0 ? ` (${criticalCount} critical)` : ""} - ${dateStr}${periodLabel}`;
 
       const html = buildEmailTemplate({
         title: "Error Digest",
