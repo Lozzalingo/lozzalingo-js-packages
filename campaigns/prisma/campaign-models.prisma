@@ -1,0 +1,61 @@
+// Campaign Models (Reference)
+// Copy these models into your project's schema.prisma
+// Note: @db.Text annotations are stripped for SQLite compatibility
+// For MySQL, you may want to add @db.Text to blocks, errorMessage, detailsJson, and url fields
+
+model Campaign {
+  id          String    @id @default(uuid())
+  name        String
+  subject     String
+  blocks      String    // JSON array of block objects
+  isActive    Boolean   @default(true)
+  trigger     String    @default("manual") // 'manual' | 'new_subscriber'
+  sendCount   Int       @default(0)
+  lastSentAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  sends       CampaignSend[]
+
+  @@index([trigger])
+  @@index([isActive])
+}
+
+model CampaignSend {
+  id             String    @id @default(uuid())
+  campaignId     String
+  recipientEmail String
+  sentAt         DateTime  @default(now())
+  status         String    @default("sent") // 'sent' | 'failed'
+  errorMessage   String?
+  openedAt       DateTime?
+  openCount      Int       @default(0)
+
+  campaign       Campaign  @relation(fields: [campaignId], references: [id])
+
+  @@index([campaignId])
+  @@index([recipientEmail])
+  @@index([status])
+}
+
+model CampaignClick {
+  id             String    @id @default(uuid())
+  campaignId     String
+  recipientEmail String
+  url            String
+  clickedAt      DateTime  @default(now())
+
+  @@index([campaignId])
+  @@index([recipientEmail])
+}
+
+model EmailEvent {
+  id           String    @id @default(uuid())
+  email        String
+  eventType    String    // 'bounce' | 'complaint'
+  detailsJson  String?
+  receivedAt   DateTime  @default(now())
+
+  @@index([email])
+  @@index([eventType])
+}

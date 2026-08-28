@@ -49,6 +49,7 @@ const DEFAULT_CONFIG = {
     restream: false,
     ticker: false,
     ads: false,
+    campaigns: false,
   },
 
   // Default route mount paths
@@ -78,6 +79,8 @@ const DEFAULT_CONFIG = {
     crm: "/api/crm",
     ticker: "/api/recent-sales",
     ads: "/api/products",
+    campaigns: "/api/admin/campaigns",
+    campaignsTracking: "/api/campaigns/track",
   },
 
   // CORS defaults
@@ -146,6 +149,12 @@ const DEFAULT_CONFIG = {
       cronHour: 21, // 24h format, in the configured timezone
       timezone: "Europe/London",
     },
+  },
+
+  campaigns: {
+    trackingSecret: null, // Falls back to NEXTAUTH_SECRET
+    variables: [], // Custom template variables [{ name, resolver, preview_value }]
+    inactiveThreshold: 3, // Campaigns received before subscriber deemed "inactive"
   },
 
   external_api: {

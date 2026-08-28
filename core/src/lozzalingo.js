@@ -340,6 +340,9 @@ class Lozzalingo {
     this._registerMarketplaceSync();
     this._registerPurchases();
 
+    // Marketing
+    this._registerCampaigns();
+
     // Cross-site integrations
     this._registerTicker();
     this._registerAds();
@@ -621,6 +624,43 @@ class Lozzalingo {
           productUrlPattern: adsConfig.productUrlPattern || "/shop/{id}",
         })
       );
+    });
+  }
+
+  _registerCampaigns() {
+    if (!this.isEnabled("campaigns")) return;
+    if (!this.services.email) {
+      console.warn("[Core] Campaigns requires email service, skipping");
+      return;
+    }
+    this._tryRegister("campaigns", () => {
+      const { createCampaignsRoutes } = require("@lozzalingo/campaigns/server");
+      const campaignsConfig = this.config.campaigns || {};
+
+      const { adminRouter, trackingRouter } = createCampaignsRoutes(
+        this.prisma,
+        this.services.email,
+        {
+          authMiddleware: this._adminMiddleware,
+          brandName:
+            (this.config.email && this.config.email.brandName) ||
+            this.config.site.name,
+          style: (this.config.email && this.config.email.style) || {},
+          websiteUrl:
+            this.config.site.baseUrl || process.env.FRONTEND_URL,
+          trackingSecret:
+            campaignsConfig.trackingSecret || process.env.NEXTAUTH_SECRET,
+          trackingBaseUrl:
+            `${this.config.site.baseUrl || process.env.FRONTEND_URL || ""}${this.config.routes.campaignsTracking}`,
+          variables: campaignsConfig.variables || [],
+          inactiveThreshold: campaignsConfig.inactiveThreshold || 3,
+        }
+      );
+
+      // Admin routes (behind auth)
+      this.app.use(this.config.routes.campaigns, adminRouter);
+      // Public tracking routes (no auth)
+      this.app.use(this.config.routes.campaignsTracking, trackingRouter);
     });
   }
 
