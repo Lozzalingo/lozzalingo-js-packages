@@ -381,9 +381,8 @@ function createVisitorController(prisma, options = {}) {
         return res.status(400).json({ error: "Visitor ID required" });
       }
 
-      const id = typeof visitorId === 'string' ? parseInt(visitorId, 10) : visitorId;
       await prisma.visitor.update({
-        where: { id },
+        where: { id: visitorId },
         data: {
           timeOnPage,
           pageLoadTime,
@@ -393,6 +392,10 @@ function createVisitorController(prisma, options = {}) {
 
       res.status(200).json({ success: true });
     } catch (error) {
+      if (error.code === 'P2025') {
+        console.error('[Analytics] Visitor not found for update:', visitorId);
+        return res.status(404).json({ error: 'Visitor not found' });
+      }
       console.error("[Analytics] Error updating visitor:", error);
       res.status(500).json({ error: "Failed to update visitor" });
     }
