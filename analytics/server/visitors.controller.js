@@ -310,28 +310,40 @@ function createVisitorController(prisma, options = {}) {
 
       console.log("[Analytics] Tracking view:", path, "from:", ip);
 
+      // Coerce types to match Prisma schema (clients may send strings or unexpected types)
+      const toInt = (v) => { const n = parseInt(v, 10); return isNaN(n) ? null : n; };
+      const toFloat = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+      const toBool = (v) => v === true || v === 'true' || v === 1;
+      const toStr = (v, maxLen = 255) => v != null ? String(v).slice(0, maxLen) : null;
+
       const visitor = await prisma.visitor.create({
         data: {
           ip,
-          path: path || req.originalUrl || '/',
-          referrer: referrer || req.get('Referrer') || null,
-          referrerCategory: referrerCategory || categorizeReferrer(referrer || req.get('Referrer'), siteDomain),
-          city: geo.city, country: geo.country, region: geo.region,
+          path: toStr(path || req.originalUrl || '/', 2048),
+          referrer: toStr(referrer || req.get('Referrer'), 2048),
+          referrerCategory: toStr(referrerCategory || categorizeReferrer(referrer || req.get('Referrer'), siteDomain)),
+          city: toStr(geo.city), country: toStr(geo.country), region: toStr(geo.region),
           latitude: geo.latitude, longitude: geo.longitude,
-          sessionId, sessionPageCount, isNewVisitor,
-          userAgent, deviceType, deviceBrand,
-          browser, browserVersion, os, osVersion,
-          screenWidth, screenHeight, viewportWidth, viewportHeight,
-          pixelRatio, colorDepth, touchPoints, orientation,
-          hardwareCores, deviceMemory, connectionType,
-          fingerprint, canvasHash, webglHash,
-          isBot, botType, jsEnabled,
-          pageLoadTime, timeOnPage,
-          utmSource, utmMedium, utmCampaign, utmContent, utmTerm,
-          eventType,
+          sessionId: toStr(sessionId), sessionPageCount: toInt(sessionPageCount), isNewVisitor: toBool(isNewVisitor),
+          userAgent: toStr(userAgent, 1024), deviceType: toStr(deviceType), deviceBrand: toStr(deviceBrand),
+          browser: toStr(browser), browserVersion: toStr(browserVersion), os: toStr(os), osVersion: toStr(osVersion),
+          screenWidth: toInt(screenWidth), screenHeight: toInt(screenHeight),
+          viewportWidth: toInt(viewportWidth), viewportHeight: toInt(viewportHeight),
+          pixelRatio: toFloat(pixelRatio), colorDepth: toInt(colorDepth),
+          touchPoints: toInt(touchPoints), orientation: toStr(orientation),
+          hardwareCores: toInt(hardwareCores), deviceMemory: toFloat(deviceMemory),
+          connectionType: toStr(connectionType),
+          fingerprint: toStr(fingerprint, 512), canvasHash: toStr(canvasHash, 512), webglHash: toStr(webglHash, 512),
+          isBot: toBool(isBot), botType: toStr(botType), jsEnabled: toBool(jsEnabled),
+          pageLoadTime: toInt(pageLoadTime), timeOnPage: toInt(timeOnPage),
+          utmSource: toStr(utmSource), utmMedium: toStr(utmMedium),
+          utmCampaign: toStr(utmCampaign), utmContent: toStr(utmContent), utmTerm: toStr(utmTerm),
+          eventType: toStr(eventType),
           eventData: eventData ? JSON.stringify(eventData) : null,
           userId: userId || null,
-          productViewed, addedToCart, checkoutStarted, purchaseComplete, orderValue,
+          productViewed: toStr(productViewed), addedToCart: toBool(addedToCart),
+          checkoutStarted: toBool(checkoutStarted), purchaseComplete: toBool(purchaseComplete),
+          orderValue: toFloat(orderValue),
         },
       });
 
@@ -368,7 +380,7 @@ function createVisitorController(prisma, options = {}) {
       console.log("[Analytics] Tracked visitor:", visitor.id);
       res.status(200).json({ success: true, visitorId: visitor.id });
     } catch (error) {
-      console.error("[Analytics] Error tracking visitor:", error);
+      console.error("[Analytics] Error tracking visitor:", error.code || '', error.message, error.meta ? JSON.stringify(error.meta) : '');
       res.status(500).json({ error: "Failed to track view" });
     }
   };
@@ -381,12 +393,14 @@ function createVisitorController(prisma, options = {}) {
         return res.status(400).json({ error: "Visitor ID required" });
       }
 
+      const toInt = (v) => { const n = parseInt(v, 10); return isNaN(n) ? null : n; };
+
       await prisma.visitor.update({
-        where: { id: visitorId },
+        where: { id: String(visitorId) },
         data: {
-          timeOnPage,
-          pageLoadTime,
-          ...(eventType && { eventType }),
+          timeOnPage: toInt(timeOnPage),
+          pageLoadTime: toInt(pageLoadTime),
+          ...(eventType && { eventType: String(eventType) }),
         },
       });
 
