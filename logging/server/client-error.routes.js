@@ -1,6 +1,6 @@
 /**
  * @lozzalingo/logging - Client Error Endpoint
- * POST /api/logs/client — Receives browser errors, stores in AppLog
+ * POST /api/logs/client  -  Receives browser errors, stores in AppLog
  * No auth required (client-side), rate-limited by IP
  */
 
@@ -50,6 +50,28 @@ function createClientErrorRoutes(prisma) {
       });
 
       console.log(`[ClientError] ${project || '?'}: ${String(message).slice(0, 100)}`);
+
+      // Forward to Site Monitor (fire-and-forget)
+      const SM_URL = process.env.SITE_MONITOR_URL;
+      const SM_KEY = process.env.SITE_MONITOR_KEY;
+      if (SM_URL && SM_KEY) {
+        fetch(`${SM_URL}/api/sm/error`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-SM-Key': SM_KEY },
+          body: JSON.stringify({
+            error: {
+              class: 'ClientError',
+              message: String(message).slice(0, 1000),
+              stack: stack ? String(stack).slice(0, 5000) : '',
+              source: 'client',
+            },
+            request: { path: url || null, ip, user_agent: userAgent || req.headers['user-agent'] || '' },
+            timestamp: new Date().toISOString(),
+            meta: { sourceFile: source, line, column, project },
+          }),
+        }).catch(() => {});
+      }
+
       res.json({ ok: true });
     } catch (error) {
       console.error('[ClientError] Failed to store error:', error.message);

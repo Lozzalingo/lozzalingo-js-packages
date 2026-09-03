@@ -6,6 +6,35 @@
 function createLoggingService(prisma) {
   console.log('[Logging] Initializing logging service');
 
+  const SM_URL = process.env.SITE_MONITOR_URL;
+  const SM_KEY = process.env.SITE_MONITOR_KEY;
+
+  function forwardToSiteMonitor(level, source, message, details, userId) {
+    if (!SM_URL || !SM_KEY) return;
+
+    const payload = {
+      level,
+      message,
+      timestamp: new Date().toISOString(),
+      meta: {
+        source,
+        details: details ? JSON.stringify(details) : null,
+      },
+      user: { id: userId || null },
+    };
+
+    fetch(`${SM_URL}/api/sm/ingest`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-SM-Key': SM_KEY,
+      },
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      // Silently swallow, Site Monitor being down must never break a site
+    });
+  }
+
   async function log(level, source, message, details, userId) {
     try {
       await prisma.appLog.create({
@@ -17,6 +46,9 @@ function createLoggingService(prisma) {
           userId: userId || null,
         },
       });
+
+      // Forward to Site Monitor (fire-and-forget)
+      forwardToSiteMonitor(level, source, message, details, userId);
     } catch (error) {
       // Fallback to console if DB write fails
       console.error('[Logging] Failed to write log to DB:', error.message);
