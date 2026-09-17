@@ -7,7 +7,8 @@
   "exports": {
     ".": "./index.js",
     "./server": "./server/index.js",
-    "./client": "./client/index.js"
+    "./client": "./client/index.js",
+    "./server/storage-client": "./server/storage-client.js"
   },
   "peerDependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
