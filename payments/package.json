@@ -8,7 +8,8 @@
     "./controller": "./src/controller.js",
     "./services/checkout": "./src/services/checkout.js",
     "./services/invoicing": "./src/services/invoicing.js",
-    "./services/webhooks": "./src/services/webhooks.js"
+    "./services/webhooks": "./src/services/webhooks.js",
+    "./server/payments-client": "./server/payments-client.js"
   },
   "dependencies": {
     "stripe": "^20.1.0"
