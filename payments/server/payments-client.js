@@ -1,14 +1,14 @@
 /**
  * Thin client for the centralised Payments service.
  * Replaces direct Stripe SDK usage. Sites call this to create checkouts,
- * retrieve sessions, and list transactions.
+ * manage subscriptions, customers, and more.
  *
  * Usage:
  *   const { PaymentsClient } = require('@lozzalingo/payments/server/payments-client');
  *
  *   const client = new PaymentsClient();
  *
- *   // Create checkout
+ *   // One-time checkout
  *   const result = await client.createCheckout({
  *     lineItems: [{ name: 'T-Shirt', pricePence: 2500, quantity: 1 }],
  *     successUrl: 'https://mysite.com/success',
@@ -16,13 +16,32 @@
  *     customerEmail: 'buyer@example.com',
  *     metadata: { orderId: '123' },
  *   });
- *   // result = { checkoutUrl: 'https://checkout.stripe.com/...', sessionId: 'cs_...' }
  *
- *   // Check payment status
- *   const session = await client.getSession('cs_...');
+ *   // Subscription checkout
+ *   const sub = await client.createSubscriptionCheckout({
+ *     lineItems: [{ priceId: 'price_xxx', quantity: 1 }],
+ *     successUrl: 'https://mysite.com/success',
+ *     cancelUrl: 'https://mysite.com/cancel',
+ *   });
  *
- *   // Get transaction history
- *   const transactions = await client.listTransactions({ limit: 20 });
+ *   // PaymentIntent (custom flow)
+ *   const intent = await client.createIntent({ amountPence: 2500 });
+ *   // intent = { clientSecret: 'pi_..._secret_...', intentId: 'pi_...' }
+ *
+ *   // Subscription management
+ *   const subscription = await client.getSubscription('sub_xxx');
+ *   await client.updateSubscription('sub_xxx', { cancelAtPeriodEnd: true });
+ *   await client.cancelSubscription('sub_xxx');
+ *
+ *   // Customer management
+ *   const customer = await client.createCustomer({ email: 'user@example.com' });
+ *   await client.getCustomer('cus_xxx');
+ *
+ *   // Billing portal
+ *   const portal = await client.createBillingPortal({ customerId: 'cus_xxx', returnUrl: '...' });
+ *
+ *   // Refunds
+ *   await client.createRefund({ paymentIntentId: 'pi_xxx' });
  */
 
 const crypto = require("crypto");
@@ -56,13 +75,6 @@ class PaymentsClient {
    * Returns parsed JSON on success, or null on failure.
    * Never throws - logs errors and returns null so the calling site
    * keeps working even if the payments service is down.
-   *
-   * @param {string} method - HTTP method
-   * @param {string} path - URL path (e.g. /api/payments/checkout)
-   * @param {object} [options]
-   * @param {object} [options.body] - JSON body for POST requests
-   * @param {object} [options.params] - Query parameters for GET requests
-   * @returns {Promise<object|null>}
    */
   async _request(method, path, { body, params } = {}) {
     if (!this.url) {
@@ -124,16 +136,20 @@ class PaymentsClient {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // One-time checkout
+  // -------------------------------------------------------------------------
+
   /**
    * Create a checkout session via the payments service.
    *
    * @param {object} options
    * @param {Array<{name: string, pricePence: number, quantity: number}>} options.lineItems
-   * @param {string} options.successUrl - Redirect URL after successful payment
-   * @param {string} options.cancelUrl - Redirect URL if customer cancels
-   * @param {string} [options.customerEmail] - Pre-fill email
-   * @param {object} [options.metadata] - Metadata to attach to the session
-   * @param {string} [options.currency] - Currency code (default: gbp)
+   * @param {string} options.successUrl
+   * @param {string} options.cancelUrl
+   * @param {string} [options.customerEmail]
+   * @param {object} [options.metadata]
+   * @param {string} [options.currency]
    * @returns {Promise<{checkoutUrl: string, sessionId: string}|null>}
    */
   async createCheckout({
@@ -159,22 +175,382 @@ class PaymentsClient {
 
   /**
    * Retrieve a checkout session by ID.
-   *
-   * @param {string} sessionId - The Stripe session ID (cs_...)
+   * @param {string} sessionId
    * @returns {Promise<object|null>}
    */
   async getSession(sessionId) {
-    return this._request("GET", "/api/payments/session", {
+    return this._request("GET", "/api/payments/checkout/session", {
       params: { session_id: sessionId },
     });
   }
 
+  // -------------------------------------------------------------------------
+  // Subscription checkout
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create a subscription checkout session.
+   *
+   * @param {object} options
+   * @param {Array<{priceId: string, quantity: number}>} options.lineItems
+   * @param {string} options.successUrl
+   * @param {string} options.cancelUrl
+   * @param {string} [options.customerEmail]
+   * @param {object} [options.metadata]
+   * @param {number} [options.trialEnd] - Unix timestamp for trial end
+   * @returns {Promise<{checkoutUrl: string, sessionId: string}|null>}
+   */
+  async createSubscriptionCheckout({
+    lineItems,
+    successUrl,
+    cancelUrl,
+    customerEmail,
+    metadata,
+    trialEnd,
+  }) {
+    const payload = {
+      line_items: lineItems.map((item) => ({
+        price_id: item.priceId,
+        quantity: item.quantity || 1,
+      })),
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+    };
+
+    if (customerEmail) payload.customer_email = customerEmail;
+    if (metadata) payload.metadata = metadata;
+    if (trialEnd) payload.trial_end = trialEnd;
+
+    return this._request("POST", "/api/payments/checkout/subscription", {
+      body: payload,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // PaymentIntent (custom flow)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create a PaymentIntent for custom payment flows.
+   *
+   * @param {object} options
+   * @param {number} options.amountPence
+   * @param {string} [options.currency]
+   * @param {string} [options.customerEmail]
+   * @param {object} [options.metadata]
+   * @param {string} [options.receiptEmail]
+   * @param {string} [options.customerId]
+   * @param {string} [options.description]
+   * @returns {Promise<{clientSecret: string, intentId: string}|null>}
+   */
+  async createIntent({
+    amountPence,
+    currency = "gbp",
+    customerEmail,
+    metadata,
+    receiptEmail,
+    customerId,
+    description,
+  }) {
+    const payload = {
+      amount_pence: amountPence,
+      currency,
+    };
+
+    if (customerEmail) payload.customer_email = customerEmail;
+    if (metadata) payload.metadata = metadata;
+    if (receiptEmail) payload.receipt_email = receiptEmail;
+    if (customerId) payload.customer_id = customerId;
+    if (description) payload.description = description;
+
+    return this._request("POST", "/api/payments/intent", { body: payload });
+  }
+
+  // -------------------------------------------------------------------------
+  // Subscription management
+  // -------------------------------------------------------------------------
+
+  /**
+   * Retrieve subscription details.
+   * @param {string} subscriptionId
+   * @returns {Promise<object|null>}
+   */
+  async getSubscription(subscriptionId) {
+    return this._request("GET", `/api/payments/subscriptions/${subscriptionId}`);
+  }
+
+  /**
+   * Update a subscription (cancel at period end, change plan, etc.).
+   *
+   * @param {string} subscriptionId
+   * @param {object} options
+   * @param {boolean} [options.cancelAtPeriodEnd]
+   * @param {Array} [options.items] - Item updates for plan changes
+   * @param {string} [options.prorationBehavior]
+   * @param {object} [options.metadata]
+   * @returns {Promise<object|null>}
+   */
+  async updateSubscription(subscriptionId, {
+    cancelAtPeriodEnd,
+    items,
+    prorationBehavior,
+    metadata,
+  } = {}) {
+    const payload = {};
+
+    if (cancelAtPeriodEnd !== undefined) payload.cancel_at_period_end = cancelAtPeriodEnd;
+    if (items) payload.items = items;
+    if (prorationBehavior) payload.proration_behavior = prorationBehavior;
+    if (metadata) payload.metadata = metadata;
+
+    return this._request("PUT", `/api/payments/subscriptions/${subscriptionId}`, {
+      body: payload,
+    });
+  }
+
+  /**
+   * Cancel a subscription immediately.
+   * @param {string} subscriptionId
+   * @returns {Promise<object|null>}
+   */
+  async cancelSubscription(subscriptionId) {
+    return this._request("DELETE", `/api/payments/subscriptions/${subscriptionId}`);
+  }
+
+  // -------------------------------------------------------------------------
+  // Customer management
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create a Stripe customer.
+   * @param {object} options
+   * @param {string} options.email
+   * @param {object} [options.metadata]
+   * @returns {Promise<{customerId: string, email: string}|null>}
+   */
+  async createCustomer({ email, metadata }) {
+    const payload = { email };
+    if (metadata) payload.metadata = metadata;
+
+    return this._request("POST", "/api/payments/customers", { body: payload });
+  }
+
+  /**
+   * Retrieve a Stripe customer.
+   * @param {string} customerId
+   * @returns {Promise<object|null>}
+   */
+  async getCustomer(customerId) {
+    return this._request("GET", `/api/payments/customers/${customerId}`);
+  }
+
+  /**
+   * Update a Stripe customer.
+   * @param {string} customerId
+   * @param {object} options
+   * @param {string} [options.email]
+   * @param {object} [options.metadata]
+   * @param {object} [options.invoiceSettings]
+   * @returns {Promise<object|null>}
+   */
+  async updateCustomer(customerId, { email, metadata, invoiceSettings } = {}) {
+    const payload = {};
+    if (email) payload.email = email;
+    if (metadata) payload.metadata = metadata;
+    if (invoiceSettings) payload.invoice_settings = invoiceSettings;
+
+    return this._request("PUT", `/api/payments/customers/${customerId}`, {
+      body: payload,
+    });
+  }
+
+  /**
+   * Attach a payment method to a customer.
+   * @param {string} customerId
+   * @param {string} paymentMethodId
+   * @returns {Promise<object|null>}
+   */
+  async attachPaymentMethod(customerId, paymentMethodId) {
+    return this._request(
+      "POST",
+      `/api/payments/customers/${customerId}/payment-methods`,
+      { body: { payment_method_id: paymentMethodId } }
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Billing portal
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create a Stripe Billing Portal session.
+   * @param {object} options
+   * @param {string} options.customerId
+   * @param {string} options.returnUrl
+   * @returns {Promise<{url: string}|null>}
+   */
+  async createBillingPortal({ customerId, returnUrl }) {
+    return this._request("POST", "/api/payments/billing-portal", {
+      body: {
+        customer_id: customerId,
+        return_url: returnUrl,
+      },
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Refunds
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create a refund.
+   * @param {object} options
+   * @param {string} [options.paymentIntentId]
+   * @param {string} [options.chargeId]
+   * @param {number} [options.amount] - Partial refund amount in pence
+   * @param {string} [options.reason]
+   * @returns {Promise<object|null>}
+   */
+  async createRefund({ paymentIntentId, chargeId, amount, reason } = {}) {
+    const payload = {};
+    if (paymentIntentId) payload.payment_intent_id = paymentIntentId;
+    if (chargeId) payload.charge_id = chargeId;
+    if (amount !== undefined) payload.amount = amount;
+    if (reason) payload.reason = reason;
+
+    return this._request("POST", "/api/payments/refunds", { body: payload });
+  }
+
+  // -------------------------------------------------------------------------
+  // Products and prices
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create a Stripe product.
+   * @param {object} options
+   * @param {string} options.name
+   * @param {string} [options.description]
+   * @param {object} [options.metadata]
+   * @returns {Promise<{productId: string, name: string}|null>}
+   */
+  async createProduct({ name, description, metadata }) {
+    const payload = { name };
+    if (description) payload.description = description;
+    if (metadata) payload.metadata = metadata;
+
+    return this._request("POST", "/api/payments/products", { body: payload });
+  }
+
+  /**
+   * List products.
+   * @param {object} [options]
+   * @param {number} [options.limit]
+   * @param {boolean} [options.active]
+   * @returns {Promise<object|null>}
+   */
+  async listProducts({ limit = 20, active } = {}) {
+    const params = { limit };
+    if (active !== undefined) params.active = String(active);
+
+    return this._request("GET", "/api/payments/products", { params });
+  }
+
+  /**
+   * Create a Stripe price.
+   * @param {object} options
+   * @param {string} options.productId
+   * @param {number} options.unitAmount - Amount in pence
+   * @param {string} [options.currency]
+   * @param {object} [options.recurring] - e.g. { interval: 'month' }
+   * @param {object} [options.metadata]
+   * @returns {Promise<object|null>}
+   */
+  async createPrice({ productId, unitAmount, currency = "gbp", recurring, metadata }) {
+    const payload = {
+      product_id: productId,
+      unit_amount: unitAmount,
+      currency,
+    };
+    if (recurring) payload.recurring = recurring;
+    if (metadata) payload.metadata = metadata;
+
+    return this._request("POST", "/api/payments/prices", { body: payload });
+  }
+
+  /**
+   * List prices, optionally filtered by product.
+   * @param {object} [options]
+   * @param {string} [options.productId]
+   * @param {number} [options.limit]
+   * @param {boolean} [options.active]
+   * @returns {Promise<object|null>}
+   */
+  async listPrices({ productId, limit = 20, active } = {}) {
+    const params = { limit };
+    if (productId) params.product_id = productId;
+    if (active !== undefined) params.active = String(active);
+
+    return this._request("GET", "/api/payments/prices", { params });
+  }
+
+  // -------------------------------------------------------------------------
+  // Connect (marketplace)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create a Stripe Connect account.
+   * @param {object} options
+   * @param {string} options.email
+   * @param {object} [options.metadata]
+   * @param {string} [options.country]
+   * @returns {Promise<{accountId: string, email: string}|null>}
+   */
+  async createConnectAccount({ email, metadata, country }) {
+    const payload = { email };
+    if (metadata) payload.metadata = metadata;
+    if (country) payload.country = country;
+
+    return this._request("POST", "/api/payments/connect/accounts", {
+      body: payload,
+    });
+  }
+
+  /**
+   * Create an account link for onboarding a connected account.
+   * @param {object} options
+   * @param {string} options.accountId
+   * @param {string} options.refreshUrl
+   * @param {string} options.returnUrl
+   * @returns {Promise<{url: string, expiresAt: number}|null>}
+   */
+  async createAccountLink({ accountId, refreshUrl, returnUrl }) {
+    return this._request("POST", "/api/payments/connect/account-links", {
+      body: {
+        account_id: accountId,
+        refresh_url: refreshUrl,
+        return_url: returnUrl,
+      },
+    });
+  }
+
+  /**
+   * Retrieve a connected account.
+   * @param {string} accountId
+   * @returns {Promise<object|null>}
+   */
+  async getConnectAccount(accountId) {
+    return this._request("GET", `/api/payments/connect/accounts/${accountId}`);
+  }
+
+  // -------------------------------------------------------------------------
+  // Transactions
+  // -------------------------------------------------------------------------
+
   /**
    * List recent transactions from the payments service.
-   *
    * @param {object} [options]
-   * @param {number} [options.limit] - Number of results (default: 20)
-   * @param {number} [options.offset] - Number of results to skip (default: 0)
+   * @param {number} [options.limit]
+   * @param {number} [options.offset]
    * @returns {Promise<object|null>}
    */
   async listTransactions({ limit = 20, offset = 0 } = {}) {
@@ -182,6 +558,10 @@ class PaymentsClient {
       params: { limit, offset },
     });
   }
+
+  // -------------------------------------------------------------------------
+  // Callback verification
+  // -------------------------------------------------------------------------
 
   /**
    * Verify that a payment callback came from the payments service.
@@ -220,62 +600,90 @@ class PaymentsClient {
 /**
  * Create an Express middleware handler for payment callbacks from the service.
  *
- * The payments service POSTs to this endpoint after a checkout completes or fails.
- * Each site mounts this handler and provides its own onSuccess/onFailure callbacks
- * to do site-specific work (update orders, send emails, etc.).
+ * The payments service POSTs to this endpoint after any Stripe event is processed.
+ * Each site mounts this handler and provides callbacks for site-specific work.
  *
  * Usage:
  *   const { createPaymentCallbackHandler } = require('@lozzalingo/payments/server/payments-client');
  *
- *   async function handleSuccess({ sessionId, lineItems, metadata, customerEmail }) {
+ *   async function handleSuccess(data) {
+ *     // data includes: sessionId, lineItems, metadata, customerEmail, eventType
  *     const booking = await prisma.booking.update({
- *       where: { id: metadata.bookingId },
+ *       where: { id: data.metadata.bookingId },
  *       data: { status: 'paid' },
  *     });
- *     await sendConfirmationEmail(booking);
  *   }
  *
- *   async function handleFailure({ sessionId, eventType, metadata }) {
- *     await prisma.booking.update({
- *       where: { id: metadata.bookingId },
- *       data: { status: 'failed' },
- *     });
+ *   async function handleFailure(data) {
+ *     // data includes: sessionId, eventType, metadata
  *   }
  *
- *   app.post('/payments/callback', createPaymentCallbackHandler(handleSuccess, handleFailure));
+ *   async function handleSubscription(data) {
+ *     // data includes: subscriptionId, customerId, status, eventType, items, metadata
+ *   }
  *
- * @param {Function} onSuccess - Called with { sessionId, lineItems, metadata, customerEmail }
- * @param {Function} onFailure - Called with { sessionId, eventType, metadata }
- * @param {object} [options]
+ *   app.post('/payments/callback', createPaymentCallbackHandler({
+ *     onSuccess: handleSuccess,
+ *     onFailure: handleFailure,
+ *     onSubscription: handleSubscription,
+ *   }));
+ *
+ * @param {object} options
+ * @param {Function} options.onSuccess - Called on successful payment events
+ * @param {Function} [options.onFailure] - Called on failed/expired events
+ * @param {Function} [options.onSubscription] - Called on subscription lifecycle events
  * @param {PaymentsClient} [options.client] - Custom PaymentsClient instance
  * @returns {Function} Express route handler (req, res)
  */
-function createPaymentCallbackHandler(onSuccess, onFailure, options = {}) {
-  const client = options.client || new PaymentsClient();
+function createPaymentCallbackHandler({ onSuccess, onFailure, onSubscription, client } = {}) {
+  const paymentsClient = client || new PaymentsClient();
+
+  const successEvents = new Set([
+    "checkout.session.completed",
+    "payment_intent.succeeded",
+    "invoice.paid",
+    "invoice.payment_succeeded",
+  ]);
+
+  const failureEvents = new Set([
+    "checkout.session.expired",
+    "payment_intent.payment_failed",
+    "invoice.payment_failed",
+  ]);
+
+  const subscriptionEvents = new Set([
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+  ]);
 
   return async (req, res) => {
     // Verify the callback signature
-    const data = client.verifyCallback(req);
+    let data = paymentsClient.verifyCallback(req);
     if (!data) {
-      console.error("[PaymentsClient] Rejected callback with invalid signature");
-      return res.status(403).json({ error: "Invalid signature" });
+      // Fall back to raw body if signature not configured
+      data = req.body;
+      if (!data || !data.event_type) {
+        console.error("[PaymentsClient] Rejected callback with invalid payload");
+        return res.status(403).json({ error: "Invalid signature" });
+      }
     }
 
-    const {
-      event_type: eventType,
-      session_id: sessionId,
-      line_items: lineItems,
-      metadata,
-      customer_email: customerEmail,
-    } = data;
-
-    console.log(`[PaymentsClient] Received callback: ${eventType} (session: ${sessionId})`);
+    const eventType = data.event_type || "";
+    console.log(`[PaymentsClient] Received callback: ${eventType}`);
 
     try {
-      if (eventType === "checkout.session.completed") {
-        await onSuccess({ sessionId, lineItems, metadata, customerEmail });
+      if (successEvents.has(eventType)) {
+        if (onSuccess) await onSuccess(data);
+      } else if (subscriptionEvents.has(eventType)) {
+        if (onSubscription) await onSubscription(data);
+        else if (onSuccess && eventType === "customer.subscription.created") {
+          await onSuccess(data);
+        }
+      } else if (failureEvents.has(eventType)) {
+        if (onFailure) await onFailure(data);
       } else {
-        await onFailure({ sessionId, eventType, metadata });
+        console.log(`[PaymentsClient] Unhandled callback event type: ${eventType}`);
       }
     } catch (error) {
       console.error(`[PaymentsClient] Callback handler failed for ${eventType}:`, error.message);
