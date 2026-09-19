@@ -43,7 +43,7 @@ function detectBot(body, email, ip) {
   // 1. Honeypot field
   if (body.website || body.url) return { isBot: true, reason: 'honeypot' };
 
-  // 2. Timestamp check — form submitted too fast
+  // 2. Timestamp check  -  form submitted too fast
   if (body._ts) {
     try {
       const elapsed = Date.now() / 1000 - parseFloat(body._ts);
@@ -78,7 +78,7 @@ function createSubscriberController(prisma, options = {}) {
         || req.ip
         || '';
 
-      // Bot detection — silently reject with fake success
+      // Bot detection  -  silently reject with fake success
       const botCheck = detectBot(req.body, email.toLowerCase(), clientIp);
       if (botCheck.isBot) {
         console.log(`[Subscribers] Bot blocked: ${email} (reason: ${botCheck.reason}, ip: ${clientIp})`);

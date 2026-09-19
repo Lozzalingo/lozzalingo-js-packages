@@ -66,14 +66,17 @@ export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
     "Digital copy of team photos and videos",
   ],
   bookingSections: [
-    { id: "your-details", title: "Your Details", icon: "FaUser", enabled: true, order: 1, fieldGroups: [
+    { id: "date-time", title: "Choose Date & Time", icon: "FaCalendarAlt", enabled: true, order: 1, fieldGroups: [
+      { id: "calendar", label: "Calendar", enabled: true },
+    ]},
+    { id: "your-details", title: "Your Details", icon: "FaUser", enabled: true, order: 2, fieldGroups: [
       { id: "first-name", label: "First Name", enabled: true },
       { id: "last-name", label: "Last Name", enabled: true },
       { id: "email", label: "Email", enabled: true },
       { id: "phone", label: "Phone", enabled: true },
       { id: "company", label: "Company Name", enabled: true },
     ]},
-    { id: "choose-event", title: "Choose Your Event", icon: "FaUsers", enabled: true, order: 2, fields: { showEventSelector: true }, fieldGroups: [
+    { id: "choose-event", title: "Choose Your Event", icon: "FaUsers", enabled: true, order: 3, fields: { showEventSelector: true }, fieldGroups: [
       { id: "group-size", label: "Group Size", enabled: true },
       { id: "event-selector", label: "Event Selector", enabled: true },
       { id: "event-format", label: "Event Format", enabled: true },
@@ -82,31 +85,28 @@ export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
       { id: "base-pricing", label: "Base Pricing", enabled: true },
       { id: "addon-pricing", label: "Add-on Pricing", enabled: true },
     ]},
-    { id: "group-type", title: "Group Type", icon: "FaTheaterMasks", enabled: true, order: 3, fieldGroups: [
+    { id: "group-type", title: "Group Type", icon: "FaTheaterMasks", enabled: true, order: 4, fieldGroups: [
       { id: "group-types", label: "Group Types", enabled: true },
       { id: "styles", label: "Styles", enabled: true },
       { id: "drink-styles", label: "Drink Styles", enabled: true },
       { id: "per-product-group-types", label: "Per-event Group Types", enabled: true },
     ]},
-    { id: "task-sections", title: "Task Sections", icon: "FaPuzzlePiece", enabled: true, order: 4, fieldGroups: [
+    { id: "task-sections", title: "Task Sections", icon: "FaPuzzlePiece", enabled: true, order: 5, fieldGroups: [
       { id: "misc-themes", label: "Miscellaneous Themes", enabled: true },
       { id: "travel-zones", label: "Travel Zones", enabled: true },
       { id: "task-section-types", label: "Task Section Types", enabled: true },
     ]},
-    { id: "duration", title: "Duration", icon: "FaClock", enabled: true, order: 5, fieldGroups: [
+    { id: "duration", title: "Duration", icon: "FaClock", enabled: true, order: 6, fieldGroups: [
       { id: "duration-mode", label: "Duration Mode", enabled: true },
       { id: "duration-options", label: "Duration Options", enabled: true },
       { id: "duration-description", label: "Description Text", enabled: true },
       { id: "duration-breakdown", label: "Duration Breakdown", enabled: true },
     ]},
-    { id: "time-blocking", title: "Time Blocking", icon: "FaLock", enabled: false, order: 6, fieldGroups: [
+    { id: "time-blocking", title: "Time Blocking", icon: "FaLock", enabled: false, order: 7, fieldGroups: [
       { id: "time-blocking-mode", label: "Time Blocking Mode", enabled: true },
     ]},
-    { id: "add-ons", title: "Add-ons", icon: "FaPlus", enabled: true, order: 7, fieldGroups: [
+    { id: "add-ons", title: "Add-ons", icon: "FaPlus", enabled: false, order: 8, fieldGroups: [
       { id: "addons-list", label: "Add-ons List", enabled: true },
-    ]},
-    { id: "date-time", title: "Choose Date & Time", icon: "FaCalendarAlt", enabled: true, order: 8, fieldGroups: [
-      { id: "calendar", label: "Calendar", enabled: true },
     ]},
     { id: "message", title: "Tell Us About Your Event", icon: "", enabled: true, order: 9, fieldGroups: [
       { id: "message-text", label: "Message Text", enabled: true },
@@ -121,6 +121,7 @@ export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
     { id: "miscellaneous", label: "Miscellaneous", description: "Themed tasks", enabled: true, pricePounds: "0" },
     { id: "bespoke", label: "Personalised", description: "Custom tasks tailored to you", enabled: true, pricePounds: "30.00" },
   ],
+  formLayout: "multi-step",
   eventFormat: "in-person" as const,
   showPublicMeetingSpace: true,
   virtualPlatforms: [

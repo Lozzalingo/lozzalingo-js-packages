@@ -1,36 +1,28 @@
 /**
  * Payment controller factory.
  *
- * Creates Express request handlers for Stripe payment operations.
- * Covers checkout sessions, invoice creation, webhook handling,
- * and session retrieval.
+ * Creates Express request handlers for payment operations via the
+ * centralised Payments service. Replaces direct Stripe SDK usage.
  *
  * Sites pass database operations via webhookHandlers so each site
  * decides what happens on payment events.
  */
 
-const Stripe = require("stripe");
-const { createCheckoutSession, retrieveSession } = require("./services/checkout");
-const { createFullInvoice } = require("./services/invoicing");
-const { verifyWebhookSignature } = require("./services/webhooks");
+const { PaymentsClient, createPaymentCallbackHandler } = require("@lozzalingo/payments/server/payments-client");
 
 /**
  * Create a payment controller.
  * @param {object} options
- * @param {string} options.stripeSecretKey
- * @param {string} options.webhookSecret
  * @param {string} options.currency - Default currency (default: "gbp")
  * @param {string} options.successUrl - Default success redirect
  * @param {string} options.cancelUrl - Default cancel redirect
  * @param {string} options.baseUrl - For building absolute URLs
  * @param {object} options.webhookHandlers - Map of event type to async handler
- * @param {string} options.invoiceFooter - Custom footer for invoices (e.g. bank details)
+ * @param {string} options.invoiceFooter - Custom footer for invoices
  * @returns {object} Controller with request handlers
  */
 function createPaymentController(options = {}) {
   const {
-    stripeSecretKey,
-    webhookSecret,
     currency = "gbp",
     successUrl = "/book/success?session_id={CHECKOUT_SESSION_ID}",
     cancelUrl = "/book?cancelled=true",
@@ -39,9 +31,9 @@ function createPaymentController(options = {}) {
     invoiceFooter,
   } = options;
 
-  console.log("[Payments] Initialising payment controller");
+  console.log("[Payments] Initialising payment controller (centralised service)");
 
-  const stripe = new Stripe(stripeSecretKey);
+  const payments = new PaymentsClient();
 
   /**
    * Build an absolute URL from a relative path.
@@ -80,25 +72,34 @@ function createPaymentController(options = {}) {
         return res.status(400).json({ error: "eventTitle and priceInPence are required" });
       }
 
-      const result = await createCheckoutSession(stripe, {
-        eventTitle,
-        customerEmail,
-        customerName,
-        groupSize,
-        eventDate,
-        priceInPence,
-        customerPhone,
-        companyName,
-        message,
-        productSlug,
-        packageSlug,
-        imageUrl,
+      console.log(`[Payments] Creating checkout for "${eventTitle}" - ${groupSize} people, ${priceInPence}p`);
+
+      const result = await payments.createCheckout({
+        lineItems: [{ name: eventTitle, pricePence: priceInPence, quantity: 1 }],
         successUrl: buildUrl(overrideSuccess || successUrl),
         cancelUrl: buildUrl(overrideCancel || cancelUrl),
+        customerEmail,
         currency,
+        metadata: {
+          customerName: customerName || "",
+          customerEmail: customerEmail || "",
+          customerPhone: customerPhone || "",
+          companyName: companyName || "",
+          groupSize: String(groupSize || ""),
+          eventDate: eventDate || "",
+          message: message || "",
+          productSlug: productSlug || "",
+          packageSlug: packageSlug || "",
+        },
       });
 
-      return res.status(200).json(result);
+      if (!result) {
+        console.error("[Payments] Checkout failed - no response from payments service");
+        return res.status(502).json({ error: "Failed to create checkout session" });
+      }
+
+      console.log(`[Payments] Checkout session created: ${result.sessionId}`);
+      return res.status(200).json({ sessionId: result.sessionId, url: result.checkoutUrl });
     } catch (error) {
       console.error("[Payments] Checkout failed:", error.message);
       return res.status(500).json({ error: "Failed to create checkout session" });
@@ -117,7 +118,12 @@ function createPaymentController(options = {}) {
         return res.status(400).json({ error: "session_id query parameter is required" });
       }
 
-      const session = await retrieveSession(stripe, session_id);
+      const session = await payments.getSession(session_id);
+
+      if (!session) {
+        console.error("[Payments] Session not found:", session_id);
+        return res.status(404).json({ error: "Session not found" });
+      }
 
       return res.status(200).json(session);
     } catch (error) {
@@ -127,116 +133,52 @@ function createPaymentController(options = {}) {
   }
 
   /**
-   * GET /checkout/status - Check if Stripe is configured.
+   * GET /checkout/status - Check if payments service is configured.
    */
   async function getStatus(req, res) {
-    const configured = Boolean(stripeSecretKey);
+    const configured = Boolean(payments.url && payments.key);
     console.log(`[Payments] Status check - configured: ${configured}`);
     return res.status(200).json({ configured });
   }
 
   /**
-   * POST /webhook - Stripe webhook receiver.
-   * Handles: checkout.session.completed, checkout.session.expired, invoice.paid.
+   * POST /webhook - Payment callback handler.
+   * Receives callbacks from the centralised payments service.
    */
-  async function handleWebhook(req, res) {
-    const sig = req.headers["stripe-signature"];
-
-    if (!sig) {
-      console.error("[Payments] Webhook rejected - missing stripe-signature header");
-      return res.status(400).json({ error: "Missing stripe-signature header" });
-    }
-
-    if (!webhookSecret) {
-      console.error("[Payments] Webhook rejected - webhook secret not configured");
-      return res.status(500).json({ error: "Webhook secret not configured" });
-    }
-
-    let event;
-
-    try {
-      event = verifyWebhookSignature(stripe, req.body, sig, webhookSecret);
-    } catch (error) {
-      console.error("[Payments] Webhook signature verification failed:", error.message);
-      return res.status(400).json({ error: "Invalid signature" });
-    }
-
-    console.log(`[Payments] Webhook verified: ${event.type} (${event.id})`);
-
-    const handler = webhookHandlers[event.type];
-    if (handler) {
-      try {
-        await handler(event.data.object, event);
-      } catch (error) {
-        console.error(`[Payments] Webhook handler failed for ${event.type}:`, error.message);
-        // Still return 200 - do not make Stripe retry for app errors
+  const handleWebhook = createPaymentCallbackHandler(
+    async ({ sessionId, lineItems, metadata, customerEmail }) => {
+      console.log(`[Payments] Payment succeeded for session: ${sessionId}`);
+      const handler = webhookHandlers["checkout.session.completed"];
+      if (handler) {
+        // Build a session-like object for backwards compatibility
+        await handler({
+          id: sessionId,
+          metadata,
+          customer_email: customerEmail,
+          line_items: lineItems,
+        }, { type: "checkout.session.completed" });
       }
-    } else {
-      console.log(`[Payments] Unhandled event type: ${event.type}`);
-    }
-
-    return res.json({ received: true });
-  }
+    },
+    async ({ sessionId, eventType, metadata }) => {
+      console.log(`[Payments] Payment event ${eventType} for session: ${sessionId}`);
+      const handler = webhookHandlers[eventType];
+      if (handler) {
+        await handler({ id: sessionId, metadata }, { type: eventType });
+      }
+    },
+    { client: payments }
+  );
 
   /**
-   * POST /admin/invoice - Create and send a Stripe invoice.
-   * Expects: { lineItems, discountPence, daysUntilDue, customerEmail, customerName,
-   *            customerPhone, companyName, productName, metadata }
+   * POST /admin/invoice - Create and send an invoice.
+   * TODO: Invoice creation via centralised service not yet implemented.
+   * For now this returns a 501 until the payments service supports invoicing.
    */
   async function createInvoice(req, res) {
-    try {
-      const {
-        lineItems,
-        discountPence,
-        daysUntilDue,
-        customerEmail,
-        customerName,
-        customerPhone,
-        companyName,
-        productName,
-        metadata,
-      } = req.body;
-
-      if (!lineItems || !Array.isArray(lineItems) || lineItems.length === 0) {
-        console.error("[Payments] Invoice rejected - missing or empty lineItems");
-        return res.status(400).json({ error: "lineItems array is required" });
-      }
-
-      if (!customerEmail) {
-        console.error("[Payments] Invoice rejected - missing customerEmail");
-        return res.status(400).json({ error: "customerEmail is required" });
-      }
-
-      console.log(`[Payments] Creating invoice for ${customerEmail}`);
-
-      const invoice = await createFullInvoice(stripe, {
-        customerEmail,
-        customerName: customerName || "Customer",
-        customerPhone,
-        companyName,
-        productName,
-        lineItems,
-        discountPence,
-        daysUntilDue: daysUntilDue || 1,
-        metadata: metadata || {},
-        footer: invoiceFooter,
-      });
-
-      console.log(`[Payments] Invoice created: ${invoice.number} - hosted URL: ${invoice.hosted_invoice_url}`);
-
-      return res.status(200).json({
-        invoice: {
-          id: invoice.id,
-          number: invoice.number,
-          amountDue: invoice.amount_due,
-          hostedInvoiceUrl: invoice.hosted_invoice_url,
-          dueDate: invoice.due_date,
-        },
-      });
-    } catch (error) {
-      console.error("[Payments] Invoice creation failed:", error.message);
-      return res.status(500).json({ error: "Failed to create invoice" });
-    }
+    // TODO: Wire invoice creation through centralised payments service
+    // The payments service needs an /api/payments/invoice endpoint first.
+    console.error("[Payments] Invoice creation via centralised service not yet supported");
+    return res.status(501).json({ error: "Invoice creation not yet available via centralised service" });
   }
 
   return {

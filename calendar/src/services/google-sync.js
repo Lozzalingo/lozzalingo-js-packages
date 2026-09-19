@@ -43,7 +43,7 @@ function createGoogleSyncService({ clientId, clientSecret, redirectUri, prisma }
    */
   async function handleCallback(code, providerId) {
     try {
-      console.log('[GoogleSync] Exchanging code for tokens — provider:', providerId);
+      console.log('[GoogleSync] Exchanging code for tokens  -  provider:', providerId);
       const { tokens } = await oauth2Client.getToken(code);
 
       await prisma.providerCalendarSync.upsert({
@@ -142,7 +142,7 @@ function createGoogleSyncService({ clientId, clientSecret, redirectUri, prisma }
         requestBody: googleEvent,
       });
 
-      console.log('[GoogleSync] Event pushed successfully — Google ID:', result.data.id);
+      console.log('[GoogleSync] Event pushed successfully  -  Google ID:', result.data.id);
       return result.data;
     } catch (error) {
       console.error('[GoogleSync] Push event failed:', error.message);
@@ -167,7 +167,7 @@ function createGoogleSyncService({ clientId, clientSecret, redirectUri, prisma }
       });
       const calendarId = sync?.externalCalId || 'primary';
 
-      console.log('[GoogleSync] Pulling events — provider:', providerId, 'from:', timeMin, 'to:', timeMax);
+      console.log('[GoogleSync] Pulling events  -  provider:', providerId, 'from:', timeMin, 'to:', timeMax);
 
       const result = await calendar.events.list({
         calendarId,

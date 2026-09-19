@@ -60,7 +60,7 @@ function createEmailService(options = {}) {
           return true;
         }
 
-        // Rate limited — retry after delay
+        // Rate limited  -  retry after delay
         if (response.status === 429 && attempt < maxRetries) {
           const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s
           console.log(`[Email] Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
@@ -68,7 +68,7 @@ function createEmailService(options = {}) {
           continue;
         }
 
-        // Bounce detection — 400-level errors indicate bad recipient
+        // Bounce detection  -  400-level errors indicate bad recipient
         if (response.status >= 400 && response.status < 500 && response.status !== 429) {
           console.error(`[Email] Bounce/reject for ${to}: ${response.status}`, data);
           return false; // Don't retry client errors

@@ -1,7 +1,7 @@
 /**
  * @lozzalingo/email - Email Routes
- * POST /test   — Send test email (admin)
- * GET  /logs   — Email send history (if logging provided)
+ * POST /test    -  Send test email (admin)
+ * GET  /logs    -  Email send history (if logging provided)
  */
 
 const express = require('express');
@@ -9,7 +9,7 @@ const express = require('express');
 function createEmailRoutes(emailService, prisma) {
   const router = express.Router();
 
-  // POST /test — Send test email
+  // POST /test  -  Send test email
   router.post('/test', async (req, res) => {
     try {
       const { email, type = 'welcome' } = req.body;
@@ -56,7 +56,7 @@ function createEmailRoutes(emailService, prisma) {
     }
   });
 
-  // GET /logs — Email send history from AppLog (if prisma provided)
+  // GET /logs  -  Email send history from AppLog (if prisma provided)
   if (prisma) {
     router.get('/logs', async (req, res) => {
       try {

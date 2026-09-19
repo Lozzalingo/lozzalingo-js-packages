@@ -192,7 +192,7 @@ function createCalendarRoutes(prisma, options = {}) {
         return res.status(400).json({ error: "Missing required fields: title, startTime, endTime" });
       }
 
-      // Build data object — only include FK fields if provided (varies by site schema)
+      // Build data object  -  only include FK fields if provided (varies by site schema)
       const data = {
         title,
         description: description || null,
@@ -209,7 +209,7 @@ function createCalendarRoutes(prisma, options = {}) {
         isPublic: isPublic !== false,
       };
 
-      // Site-specific FK fields — only set if provided
+      // Site-specific FK fields  -  only set if provided
       if (productId) data.productId = productId;
       if (eventId) data.eventId = eventId;
       if (experienceId) data.experienceId = experienceId;

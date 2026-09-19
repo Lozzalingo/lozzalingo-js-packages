@@ -7,7 +7,7 @@ const express = require('express');
 function createStorageRoutes(storageService) {
   const router = express.Router();
 
-  // POST /upload — Upload file
+  // POST /upload  -  Upload file
   router.post('/upload', async (req, res) => {
     try {
       if (!req.files || !req.files.file) {
@@ -26,7 +26,7 @@ function createStorageRoutes(storageService) {
     }
   });
 
-  // GET /files/:folder — List files in subfolder
+  // GET /files/:folder  -  List files in subfolder
   const listHandler = async (req, res) => {
     try {
       const folder = req.params.folder || '';
@@ -41,7 +41,7 @@ function createStorageRoutes(storageService) {
   router.get('/files', listHandler);
   router.get('/files/:folder', listHandler);
 
-  // DELETE /file — Delete file by URL
+  // DELETE /file  -  Delete file by URL
   router.delete('/file', async (req, res) => {
     try {
       const { url } = req.body;
@@ -58,7 +58,7 @@ function createStorageRoutes(storageService) {
     }
   });
 
-  // GET /stats — Usage statistics
+  // GET /stats  -  Usage statistics
   router.get('/stats', async (req, res) => {
     try {
       console.log('[Storage] Getting usage stats');

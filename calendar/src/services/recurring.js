@@ -2,7 +2,7 @@
  * @lozzalingo/calendar - Recurring Events Service
  *
  * Generates instances from recurrence rules (simplified RRULE support).
- * We don't pull in the full RFC 5545 library — just handle the common cases:
+ * We don't pull in the full RFC 5545 library  -  just handle the common cases:
  *   FREQ=DAILY|WEEKLY|MONTHLY, INTERVAL, COUNT, UNTIL, BYDAY
  */
 
@@ -124,7 +124,7 @@ function expandRecurringEvent(parentEvent, rrule) {
       meetingUrl: parentEvent.meetingUrl,
       status: "SCHEDULED",
       isPublic: parentEvent.isPublic !== false,
-      // Site-specific foreign keys — set by the caller
+      // Site-specific foreign keys  -  set by the caller
       productId: parentEvent.productId || null,
       eventId: parentEvent.eventId || null,
       experienceId: parentEvent.experienceId || null,

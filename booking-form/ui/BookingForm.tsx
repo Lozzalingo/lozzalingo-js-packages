@@ -9,7 +9,7 @@ import {
   FaVideo, FaLaptop,
 } from "react-icons/fa";
 import type {
-  BookingFormProps, BookingConfig, TaskSectionType, TaskSection,
+  BookingFormProps, BookingConfig, BookingFormSection, TaskSectionType, TaskSection,
   TaskSectionTypeConfig, NormalizedProduct, NormalizedLocation, CalEvent,
   EventFormat, VirtualPlatform,
 } from "./types";
@@ -60,7 +60,19 @@ export default function BookingForm({
     api.fetchConfig()
       .then((overrides) => {
         if (!overrides) return;
+        // Merge config, but preserve default section ordering.
+        // API overrides can control enabled/disabled and other section props, but not order.
         const merged = { ...defaultConfig, ...overrides };
+        if (overrides.bookingSections && defaultConfig.bookingSections) {
+          const overrideMap = new Map(overrides.bookingSections.map((s: BookingFormSection) => [s.id, s]));
+          merged.bookingSections = defaultConfig.bookingSections.map((defSection) => {
+            const apiSection = overrideMap.get(defSection.id);
+            if (!apiSection) return defSection;
+            // Keep default order, merge everything else from the API override
+            return { ...defSection, ...apiSection, order: defSection.order };
+          });
+          console.log("[BookingForm] Merged bookingSections with default ordering preserved");
+        }
         setBookingConfig(merged);
         console.log("[BookingForm] Loaded booking config from settings");
       })
@@ -524,6 +536,7 @@ export default function BookingForm({
   const [SharedCalendar, setSharedCalendar] = useState<React.ComponentType<any> | null>(null);
   useEffect(() => {
     // Dynamic import - the consuming app must have @lozzalingo/calendar installed
+    // @ts-ignore - calendar package may not be available in all consuming apps
     import("@lozzalingo/calendar/ui/SharedCalendar")
       .then((mod) => setSharedCalendar(() => mod.default))
       .catch(() => console.warn("[BookingForm] SharedCalendar not available - calendar section will not render"));
@@ -540,6 +553,25 @@ export default function BookingForm({
       const contactFields = [showEmail, showPhone].filter(Boolean).length;
       return (
         <section key="your-details">
+          {/* In multi-step mode, show mode toggle and instant-book banner here */}
+          {isMultiStep && showModeToggle && publicEventPath && (
+            <div className="flex gap-2 mb-6">
+              <button type="button" onClick={() => handleModeSwitch("private")} className={`flex-1 py-3 px-4 rounded-lg font-semibold transition border text-center ${bookingMode === "private" ? "bg-primary text-white border-primary" : "bg-white text-text-secondary border-border hover:border-primary"}`} data-action="booking_mode_private">Private Event</button>
+              <button type="button" onClick={() => handleModeSwitch("public")} className="flex-1 py-3 px-4 rounded-lg font-semibold transition border bg-white text-text-secondary border-border hover:border-primary text-center" data-action="booking_mode_public">Public Event</button>
+            </div>
+          )}
+          {isMultiStep && (
+            <div className="space-y-4 mb-6">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-start gap-3" data-section="intro-banner">
+                <FaCheck className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                <div><p className="font-semibold text-emerald-800 text-sm">Book instantly, no waiting</p><p className="text-xs text-emerald-700 mt-0.5">Fill in the form below, pay securely via Stripe, and your event is confirmed straight away.</p></div>
+              </div>
+              <button type="button" onClick={() => { const el = document.getElementById("field-date-time"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }} className="w-full flex items-center justify-between p-4 bg-surface rounded-xl border border-border hover:border-cta/50 transition" data-action="booking_check_availability">
+                <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-cta/10 flex items-center justify-center"><FaCalendarAlt className="text-cta" /></div><div className="text-left"><p className="font-semibold text-text-primary text-sm">Check availability</p><p className="text-xs text-text-secondary">Pick a date to see available time slots</p></div></div>
+                <FaArrowDown className="text-text-secondary" />
+              </button>
+            </div>
+          )}
           <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2"><FaUser className="text-cta" /> Your Details</h2>
           <div className="space-y-4">
             {(showFirstName || showLastName) && (
@@ -707,7 +739,7 @@ export default function BookingForm({
     "task-sections": () => (
       <section key="task-sections" id="field-task-sections">
         <h2 className="text-lg font-bold text-text-primary mb-2 flex items-center gap-2"><FaPuzzlePiece className="text-cta" /> Task Sections *</h2>
-        <p className="text-sm text-text-secondary mb-4">Choose 1 to 3 task sections. More sections unlock longer game time.</p>
+        <p className="text-sm text-text-secondary mb-4">Choose 1 to 3 task sections for your event.</p>
         <div className="space-y-4 mb-4">
           {taskSections.map((section, index) => (
             <div key={index} className="p-4 bg-surface rounded-xl border border-border animate-fade-in">
@@ -834,7 +866,7 @@ export default function BookingForm({
               {DURATIONS.map((d) => {
                 const isSelected = form.duration === d.value;
                 const isLocked = durationMode === "auto" && sectionCount < d.minSections;
-                return (<div key={d.value} className="relative group"><label className={`block p-4 rounded-xl border-2 text-center transition-all ${isLocked ? "opacity-40 cursor-not-allowed border-gray-200 bg-gray-50" : isSelected ? "border-cta bg-orange-50 cursor-pointer" : "border-border bg-white hover:border-cta/50 cursor-pointer"}`}><input data-field="duration" type="radio" name="duration" value={d.value} checked={isSelected} onChange={(e) => { if (!isLocked) { setForm({ ...form, duration: e.target.value }); clearError("duration"); } }} className="sr-only" disabled={isLocked} /><span className="block text-xl font-bold text-text-primary">{d.total}</span><span className="block text-xs text-text-secondary mt-1">{d.gameTime} game time</span></label>{isLocked && (<div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none"><span className="hidden group-hover:block text-[10px] text-cta bg-white border border-cta/20 rounded px-2 py-0.5 shadow-sm whitespace-nowrap">Add more task sections to unlock</span></div>)}</div>);
+                return (<div key={d.value} className="relative group"><label className={`block p-4 rounded-xl border-2 text-center transition-all ${isLocked ? "opacity-40 cursor-not-allowed border-gray-200 bg-gray-50" : isSelected ? "border-cta bg-orange-50 cursor-pointer" : "border-border bg-white hover:border-cta/50 cursor-pointer"}`}><input data-field="duration" type="radio" name="duration" value={d.value} checked={isSelected} onChange={(e) => { if (!isLocked) { setForm({ ...form, duration: e.target.value, eventDate: "", eventTime: "", slotStartTime: "", slotEndTime: "" }); clearError("duration"); } }} className="sr-only" disabled={isLocked} /><span className="block text-xl font-bold text-text-primary">{d.total}</span><span className="block text-xs text-text-secondary mt-1">{d.gameTime} game time</span></label>{isLocked && (<div className="absolute inset-0 flex items-end justify-center pb-1 pointer-events-none"><span className="hidden group-hover:block text-[10px] text-cta bg-white border border-cta/20 rounded px-2 py-0.5 shadow-sm whitespace-nowrap">Add more task sections to unlock</span></div>)}</div>);
               })}
             </div>
           )}
@@ -947,7 +979,8 @@ export default function BookingForm({
 
   return (
     <div className="space-y-6" data-form="booking" data-layout={isMultiStep ? "multi-step" : "single-page"}>
-      {showModeToggle && publicEventPath && (
+      {/* Mode toggle: always visible in single-page; in multi-step, rendered inside the your-details step */}
+      {!isMultiStep && showModeToggle && publicEventPath && (
         <div className="flex gap-2 mb-8">
           <button type="button" onClick={() => handleModeSwitch("private")} className={`flex-1 py-3 px-4 rounded-lg font-semibold transition border text-center ${bookingMode === "private" ? "bg-primary text-white border-primary" : "bg-white text-text-secondary border-border hover:border-primary"}`} data-action="booking_mode_private">Private Event</button>
           <button type="button" onClick={() => handleModeSwitch("public")} className="flex-1 py-3 px-4 rounded-lg font-semibold transition border bg-white text-text-secondary border-border hover:border-primary text-center" data-action="booking_mode_public">Public Event</button>

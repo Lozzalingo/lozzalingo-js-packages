@@ -239,7 +239,7 @@ function getStartDate(timeRange) {
 function createVisitorController(prisma, options = {}) {
   const { siteDomain = 'localhost', features = {} } = options;
 
-  // Stealth bot reclassification — runs at most once per hour
+  // Stealth bot reclassification  -  runs at most once per hour
   let lastBotReclassification = null;
   async function reclassifyStealthBots() {
     const now = Date.now();
@@ -247,7 +247,7 @@ function createVisitorController(prisma, options = {}) {
 
     try {
       // Find fingerprints that have page_view events but zero interactive events
-      // (page_exit, button_click, etc.) — real browsers always produce these
+      // (page_exit, button_click, etc.)  -  real browsers always produce these
       const suspects = await prisma.$queryRaw`
         SELECT fingerprint FROM (
           SELECT

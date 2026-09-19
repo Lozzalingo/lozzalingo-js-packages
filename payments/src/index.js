@@ -1,7 +1,8 @@
 /**
  * @lozzalingo/payments
  *
- * Stripe integration for checkout sessions, invoicing, and webhook handling.
+ * Payment integration via the centralised Payments service.
+ * Replaces direct Stripe SDK usage with thin client calls.
  */
 
 const { createPaymentRoutes } = require("./routes");
@@ -14,6 +15,7 @@ const {
   createFullInvoice,
 } = require("./services/invoicing");
 const { verifyWebhookSignature } = require("./services/webhooks");
+const { PaymentsClient, createPaymentCallbackHandler } = require("@lozzalingo/payments/server/payments-client");
 
 module.exports = {
   createPaymentRoutes,
@@ -25,4 +27,6 @@ module.exports = {
   createAndFinaliseInvoice,
   createFullInvoice,
   verifyWebhookSignature,
+  PaymentsClient,
+  createPaymentCallbackHandler,
 };

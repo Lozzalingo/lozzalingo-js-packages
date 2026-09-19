@@ -135,8 +135,8 @@ function createExternalApiController(prisma, options = {}) {
       const status = req.query.status;
 
       const where = {};
-      if (status === "published") where.published = true;
-      if (status === "draft") where.published = false;
+      if (status === "published") where.publishedAt = { not: null };
+      if (status === "draft") where.publishedAt = null;
 
       const articles = await prisma[articleModelName].findMany({
         where,
@@ -184,7 +184,7 @@ function createExternalApiController(prisma, options = {}) {
         slug,
         content: data.content,
         coverImage: data.image_url || data.coverImage || null,
-        published: data.status === "published",
+        publishedAt: data.status === "published" ? new Date() : null,
         excerpt: data.excerpt || null,
         metaTitle: data.meta_title || data.metaTitle || null,
         metaDescription: data.meta_description || data.metaDescription || null,
@@ -219,17 +219,31 @@ function createExternalApiController(prisma, options = {}) {
       }
 
       let article;
-      try {
-        article = await prisma[articleModelName].create({ data: createData });
-      } catch (createError) {
-        // If unknown fields cause the error, retry without them
-        if (createError.message && createError.message.includes("Unknown arg")) {
-          console.log("[ExternalAPI] Retrying create without optional source fields");
-          delete createData.sourceId;
-          delete createData.sourceUrl;
+      // Retry up to 5 times, stripping unknown fields each iteration
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
           article = await prisma[articleModelName].create({ data: createData });
-        } else {
-          throw createError;
+          break; // Success
+        } catch (createError) {
+          if (createError.message && createError.message.includes("Unknown arg")) {
+            const unknownMatch = createError.message.match(/Unknown argument `(\w+)`/);
+            const unknownField = unknownMatch ? unknownMatch[1] : null;
+            if (unknownField) {
+              console.log(`[ExternalAPI] Stripping unknown field '${unknownField}' (attempt ${attempt + 1})`);
+              delete createData[unknownField];
+            } else {
+              // Can't determine field, strip common optional ones
+              console.log("[ExternalAPI] Stripping common optional fields (attempt", attempt + 1, ")");
+              delete createData.sourceId;
+              delete createData.sourceUrl;
+              delete createData.publishedAt;
+              delete createData.categoryId;
+            }
+            // On last attempt, throw
+            if (attempt === 4) throw createError;
+          } else {
+            throw createError;
+          }
         }
       }
 
@@ -247,7 +261,7 @@ function createExternalApiController(prisma, options = {}) {
         success: true,
         id: article.id,
         slug: article.slug,
-        status: article.published ? "published" : "draft",
+        status: article.publishedAt ? "published" : "draft",
         message: "Article created successfully",
       });
     } catch (error) {
@@ -278,7 +292,7 @@ function createExternalApiController(prisma, options = {}) {
       if (data.image_url !== undefined || data.coverImage !== undefined) {
         updateData.coverImage = data.image_url || data.coverImage;
       }
-      if (data.status !== undefined) updateData.published = data.status === "published";
+      if (data.status !== undefined) updateData.publishedAt = data.status === "published" ? new Date() : null;
       if (data.excerpt !== undefined) updateData.excerpt = data.excerpt;
       if (data.meta_title !== undefined || data.metaTitle !== undefined) {
         updateData.metaTitle = data.meta_title || data.metaTitle;

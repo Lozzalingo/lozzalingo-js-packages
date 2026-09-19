@@ -1,8 +1,8 @@
 /**
  * @lozzalingo/logging - Log Viewer Routes
- * GET  /           — List logs (paginated, filterable)
- * GET  /stats      — Log counts by level
- * DELETE /cleanup  — Delete old logs
+ * GET  /            -  List logs (paginated, filterable)
+ * GET  /stats       -  Log counts by level
+ * DELETE /cleanup   -  Delete old logs
  */
 
 const express = require('express');
@@ -10,7 +10,7 @@ const express = require('express');
 function createLoggingRoutes(prisma) {
   const router = express.Router();
 
-  // GET / — List logs (paginated, filterable by level/source/date)
+  // GET /  -  List logs (paginated, filterable by level/source/date)
   router.get('/', async (req, res) => {
     try {
       console.log('[Logging] Fetching logs');
@@ -51,7 +51,7 @@ function createLoggingRoutes(prisma) {
     }
   });
 
-  // GET /stats — Log counts by level
+  // GET /stats  -  Log counts by level
   router.get('/stats', async (req, res) => {
     try {
       console.log('[Logging] Fetching log stats');
@@ -76,7 +76,7 @@ function createLoggingRoutes(prisma) {
     }
   });
 
-  // DELETE /cleanup — Delete old logs
+  // DELETE /cleanup  -  Delete old logs
   router.delete('/cleanup', async (req, res) => {
     try {
       const { days = 30 } = req.query;

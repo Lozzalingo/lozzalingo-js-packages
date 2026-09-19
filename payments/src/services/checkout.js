@@ -1,14 +1,13 @@
 /**
- * Checkout service - creates Stripe checkout sessions for one-off payments.
- *
- * Creates a Stripe checkout session with a single line item for the event
- * metadata (eventTitle, customerEmail, groupSize, eventDate, priceInPence,
- * productSlug, packageSlug).
+ * Checkout service - creates checkout sessions via the centralised Payments service.
+ * Replaces direct Stripe SDK calls.
  */
 
+const { PaymentsClient } = require("@lozzalingo/payments/server/payments-client");
+
 /**
- * Create a Stripe checkout session for a booking.
- * @param {Stripe} stripe - Stripe instance
+ * Create a checkout session for a booking via the payments service.
+ * @param {object} _stripe - DEPRECATED: ignored, kept for backwards compat
  * @param {object} params
  * @param {string} params.eventTitle - Name shown on checkout
  * @param {string} params.customerEmail
@@ -24,17 +23,17 @@
  * @param {string} params.successUrl - Absolute URL
  * @param {string} params.cancelUrl - Absolute URL
  * @param {string} params.currency
- * @param {string} [params.imageUrl] - Product image URL for Stripe checkout
+ * @param {string} [params.imageUrl] - Product image URL
  * @returns {Promise<{sessionId: string, url: string}>}
  */
-async function createCheckoutSession(stripe, params) {
+async function createCheckoutSession(_stripe, params) {
   const {
     eventTitle,
     customerEmail,
-    customerName,
     groupSize,
     eventDate,
     priceInPence,
+    customerName,
     customerPhone,
     companyName,
     message,
@@ -43,73 +42,60 @@ async function createCheckoutSession(stripe, params) {
     successUrl,
     cancelUrl,
     currency = "gbp",
-    imageUrl,
   } = params;
 
   console.log(`[Payments] Creating checkout session for "${eventTitle}" - ${groupSize} people, ${priceInPence}p`);
 
-  const formattedDate = new Date(eventDate).toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  const payments = new PaymentsClient();
 
-  const session = await stripe.checkout.sessions.create({
-    payment_method_types: ["card"],
-    mode: "payment",
-    customer_email: customerEmail,
-    line_items: [
-      {
-        price_data: {
-          currency,
-          product_data: {
-            name: eventTitle,
-            description: `Booking for ${groupSize} people on ${formattedDate}`,
-            ...(imageUrl ? { images: [imageUrl] } : {}),
-          },
-          unit_amount: priceInPence,
-        },
-        quantity: 1,
-      },
-    ],
+  const result = await payments.createCheckout({
+    lineItems: [{ name: eventTitle, pricePence: priceInPence, quantity: 1 }],
+    successUrl,
+    cancelUrl,
+    customerEmail,
+    currency,
     metadata: {
       customerName: customerName || "",
       customerEmail: customerEmail || "",
       customerPhone: customerPhone || "",
       companyName: companyName || "",
-      groupSize: String(groupSize),
+      groupSize: String(groupSize || ""),
       eventDate: eventDate || "",
       message: message || "",
       productSlug: productSlug || "",
       packageSlug: packageSlug || "",
     },
-    success_url: successUrl,
-    cancel_url: cancelUrl,
   });
 
-  console.log(`[Payments] Checkout session created: ${session.id}`);
+  if (!result) {
+    throw new Error("Failed to create checkout session via payments service");
+  }
+
+  console.log(`[Payments] Checkout session created: ${result.sessionId}`);
 
   return {
-    sessionId: session.id,
-    url: session.url,
+    sessionId: result.sessionId,
+    url: result.checkoutUrl,
   };
 }
 
 /**
- * Retrieve a Stripe checkout session by ID.
- * @param {Stripe} stripe - Stripe instance
+ * Retrieve a checkout session by ID via the payments service.
+ * @param {object} _stripe - DEPRECATED: ignored, kept for backwards compat
  * @param {string} sessionId
- * @returns {Promise<object>} Stripe session with expanded line_items
+ * @returns {Promise<object>}
  */
-async function retrieveSession(stripe, sessionId) {
+async function retrieveSession(_stripe, sessionId) {
   console.log(`[Payments] Retrieving session: ${sessionId}`);
 
-  const session = await stripe.checkout.sessions.retrieve(sessionId, {
-    expand: ["line_items"],
-  });
+  const payments = new PaymentsClient();
+  const session = await payments.getSession(sessionId);
 
-  console.log(`[Payments] Session retrieved: status=${session.payment_status}`);
+  if (!session) {
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  console.log(`[Payments] Session retrieved: status=${session.payment_status || session.status}`);
   return session;
 }
 

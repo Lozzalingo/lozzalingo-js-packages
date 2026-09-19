@@ -2,7 +2,7 @@
  * @lozzalingo/calendar - iCal Feed Service
  *
  * Generates .ics feeds (RFC 5545) from calendar events.
- * No external dependencies — builds iCal text manually.
+ * No external dependencies  -  builds iCal text manually.
  */
 
 /**

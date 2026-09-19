@@ -135,6 +135,28 @@ class Lozzalingo {
 
   _setupAdminAuth() {
     const nextAuthSecret = process.env.NEXTAUTH_SECRET;
+    const ssoSecret = process.env.AUTH_JWT_SECRET;
+    const ssoServiceUrl = process.env.AUTH_SERVICE_URL;
+
+    // Derive siteId from config for SSO (site.id, or slugified site.name)
+    const siteId = this.config.site?.id
+      || this.config.site?.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      || null;
+
+    // Load SSO middleware if AUTH_JWT_SECRET is set
+    let ssoMiddleware = null;
+    if (ssoSecret) {
+      try {
+        const { requireAdminSSO } = require("@lozzalingo/auth/server");
+        ssoMiddleware = requireAdminSSO(siteId, {
+          secret: ssoSecret,
+          authServiceUrl: ssoServiceUrl,
+        });
+        console.log("[Core] Admin SSO enabled for site:", siteId);
+      } catch (err) {
+        console.warn("[Core] Failed to load SSO middleware:", err.message);
+      }
+    }
 
     // Fallback static keys for backward compatibility (API integrations, etc.)
     const adminKeys = [
@@ -176,7 +198,19 @@ class Lozzalingo {
       const isLocalDev = token === "localhost" && (req.hostname === "localhost" || req.hostname === "127.0.0.1");
       if (isLocalDev) return next();
 
-      // 2. Try decoding as NextAuth JWT (primary auth method)
+      // 2. Try SSO cookie auth first (if configured)
+      if (ssoMiddleware) {
+        const cookies = req.cookies || {};
+        const cookieHeader = req.headers.cookie || '';
+        const hasAuthCookie = cookies.auth_token || cookieHeader.includes('auth_token=');
+
+        if (hasAuthCookie) {
+          // Wrap SSO middleware to handle its response
+          return ssoMiddleware(req, res, next);
+        }
+      }
+
+      // 3. Try decoding as NextAuth JWT (primary auth method)
       if (token && nextAuthSecret) {
         try {
           const payload = await decodeNextAuthJWT(token);
@@ -193,16 +227,25 @@ class Lozzalingo {
         }
       }
 
-      // 3. Fallback: static key comparison (for API integrations)
+      // 4. Fallback: static key comparison (for API integrations)
       if (token && adminKeys.includes(token)) {
         return next();
+      }
+
+      // 5. If SSO is configured but no cookie and no other auth, redirect to SSO login
+      if (ssoMiddleware) {
+        return ssoMiddleware(req, res, next);
       }
 
       console.log("[Auth] Admin auth rejected for:", req.method, req.originalUrl);
       return res.status(403).json({ error: "Admin access required" });
     };
 
-    console.log("[Core] Admin auth middleware configured (JWT + static key fallback)");
+    const authMethods = [];
+    if (ssoMiddleware) authMethods.push("SSO");
+    if (nextAuthSecret) authMethods.push("NextAuth JWT");
+    if (adminKeys.length) authMethods.push("static key");
+    console.log(`[Core] Admin auth middleware configured (${authMethods.join(" + ")})`);
   }
 
   /**
@@ -749,17 +792,14 @@ class Lozzalingo {
       // Populate the shared hooks object - both the controller and routes
       // reference the same object, so mutations here take effect everywhere.
       const bookingModelName = this.config.bookings.modelName || "booking";
-      let stripe = null;
+      let paymentsClient = null;
       if (this.isEnabled("payments")) {
-        const stripeSecretKey =
-          this.config.payments?.stripeSecretKey || process.env.STRIPE_SECRET_KEY;
-        if (stripeSecretKey) {
-          try {
-            const Stripe = require("stripe");
-            stripe = new Stripe(stripeSecretKey);
-          } catch (stripeErr) {
-            console.warn("[Bookings] Stripe client unavailable for payment checks:", stripeErr.message);
-          }
+        try {
+          const { PaymentsClient } = require("@lozzalingo/payments/server/payments-client");
+          paymentsClient = new PaymentsClient();
+          console.log("[Bookings] PaymentsClient initialised for payment checks");
+        } catch (clientErr) {
+          console.warn("[Bookings] PaymentsClient unavailable for payment checks:", clientErr.message);
         }
       }
 
@@ -902,70 +942,31 @@ class Lozzalingo {
           }
         },
         onCheckPayment: async (booking) => {
-          if (!stripe) {
-            return { paid: false, reason: "Stripe is not configured" };
+          if (!paymentsClient) {
+            return { paid: false, reason: "Payments service is not configured" };
           }
 
           if (booking.stripeSessionId) {
-            const session = await stripe.checkout.sessions.retrieve(booking.stripeSessionId);
-            const paid = session.payment_status === "paid";
-            return {
-              paid,
-              paymentStatus: session.payment_status,
-              amountPaid: session.amount_total,
-              stripeSessionId: session.id,
-              stripePaymentId: session.payment_intent || null,
-              message: paid ? "Payment received" : "Stripe Checkout session is not paid yet",
-            };
-          }
-
-          if (booking.stripePaymentId) {
-            const paymentIntent = await stripe.paymentIntents.retrieve(booking.stripePaymentId);
-            const paid = paymentIntent.status === "succeeded";
-            return {
-              paid,
-              paymentStatus: paymentIntent.status,
-              amountPaid: paymentIntent.amount_received || paymentIntent.amount,
-              stripePaymentId: paymentIntent.id,
-              message: paid ? "Payment received" : "Stripe payment is not complete yet",
-            };
-          }
-
-          // Check Invoice model for any sent invoices linked to this booking
-          if (stripe.invoices?.search) {
-            const sentInvoices = await prisma.invoice.findMany({
-              where: { bookingId: booking.id, status: "SENT", invoiceNumber: { not: null } },
-              orderBy: { createdAt: "desc" },
-            });
-
-            for (const inv of sentInvoices) {
-              const escapedNumber = String(inv.invoiceNumber).replace(/'/g, "\\'");
-              const stripeInvoices = await stripe.invoices.search({
-                query: `number:'${escapedNumber}'`,
-                limit: 1,
-              });
-              const stripeInvoice = stripeInvoices.data?.[0];
-              if (stripeInvoice) {
-                const paid = stripeInvoice.status === "paid" || stripeInvoice.paid === true;
-                if (paid) {
-                  // Mark the local invoice as paid too
-                  await prisma.invoice.update({
-                    where: { id: inv.id },
-                    data: { status: "PAID", paidAt: new Date() },
-                  });
-                  console.log(`[Bookings] Invoice ${inv.invoiceNumber} marked as paid`);
-                }
-                return {
-                  paid,
-                  paymentStatus: stripeInvoice.status,
-                  amountPaid: stripeInvoice.amount_paid,
-                  stripePaymentId: stripeInvoice.payment_intent || null,
-                  message: paid ? "Payment received" : `Stripe invoice ${inv.invoiceNumber} is not paid yet`,
-                };
-              }
+            const session = await paymentsClient.getSession(booking.stripeSessionId);
+            if (session) {
+              const paid = session.payment_status === "paid";
+              return {
+                paid,
+                paymentStatus: session.payment_status,
+                amountPaid: session.amount_total,
+                stripeSessionId: session.id || booking.stripeSessionId,
+                stripePaymentId: session.payment_intent || null,
+                message: paid ? "Payment received" : "Checkout session is not paid yet",
+              };
             }
           }
 
+          // TODO: Payment intent retrieval via centralised service not yet supported
+          if (booking.stripePaymentId) {
+            console.warn(`[Bookings] Payment intent check not yet available via centralised service for: ${booking.stripePaymentId}`);
+          }
+
+          // TODO: Invoice payment checks via centralised service not yet supported
           // Check if there are any invoices at all for this booking
           const invoiceCount = await prisma.invoice.count({ where: { bookingId: booking.id } });
           const missing = [
@@ -977,41 +978,24 @@ class Lozzalingo {
           return {
             paid: false,
             reason: invoiceCount > 0
-              ? "Invoices exist but none have been paid via Stripe yet."
-              : `No Stripe session, payment intent, or invoices found. Send an invoice or process a payment first.`,
+              ? "Invoices exist but none have been paid yet."
+              : `No session, payment intent, or invoices found. Send an invoice or process a payment first.`,
           };
         },
         onCheckInvoicePayment: async (booking, invoice) => {
-          if (!stripe) {
-            return { paid: false, reason: "Stripe is not configured" };
+          // TODO: Invoice payment checks via centralised service not yet supported
+          if (!paymentsClient) {
+            return { paid: false, reason: "Payments service is not configured" };
           }
 
           if (!invoice.invoiceNumber) {
-            return { paid: false, reason: "Invoice has no Stripe invoice number" };
+            return { paid: false, reason: "Invoice has no invoice number" };
           }
 
-          console.log(`[Bookings] Checking Stripe payment for invoice ${invoice.invoiceNumber}`);
-
-          if (stripe.invoices?.search) {
-            const escapedNumber = String(invoice.invoiceNumber).replace(/'/g, "\\'");
-            const stripeInvoices = await stripe.invoices.search({
-              query: `number:'${escapedNumber}'`,
-              limit: 1,
-            });
-            const stripeInvoice = stripeInvoices.data?.[0];
-            if (stripeInvoice) {
-              const paid = stripeInvoice.status === "paid" || stripeInvoice.paid === true;
-              return {
-                paid,
-                paymentStatus: stripeInvoice.status,
-                amountPaid: stripeInvoice.amount_paid,
-                stripePaymentId: stripeInvoice.payment_intent || null,
-                message: paid ? "Payment received" : `Invoice ${invoice.invoiceNumber} is not paid yet`,
-              };
-            }
-          }
-
-          return { paid: false, reason: `Invoice ${invoice.invoiceNumber} not found in Stripe` };
+          console.log(`[Bookings] Checking payment for invoice ${invoice.invoiceNumber}`);
+          // TODO: Wire invoice status check through centralised payments service
+          console.warn(`[Bookings] Invoice payment check via centralised service not yet implemented`);
+          return { paid: false, reason: `Invoice payment check not yet available via centralised service` };
         },
         onPaid: async (booking) => {
           console.log("[Bookings] Booking paid:", booking.bookingNumber);
@@ -1136,64 +1120,22 @@ class Lozzalingo {
               throw new Error("No ADMIN_EMAIL set - cannot send test invoice");
             }
 
-            const testKey = process.env.STRIPE_TEST_SECRET_KEY;
-            if (!testKey) {
-              throw new Error("No STRIPE_TEST_SECRET_KEY set - cannot create test invoice");
-            }
-
-            const Stripe = require("stripe");
-            const testStripe = new Stripe(testKey);
-
-            const totalPence = lineItems.reduce((s, i) => s + (i.unitPricePence * i.quantity), 0);
-            console.log(`[Bookings] Creating TEST Stripe invoice for ${adminEmail} - ${formatPence(totalPence)}`);
-
-            const invoice = await createFullInvoice(testStripe, {
-              customerEmail: adminEmail,
-              customerName: `[TEST] ${booking.customerName}`,
-              customerPhone: booking.customerPhone,
-              companyName: booking.companyName,
-              productName,
-              lineItems,
-              daysUntilDue: 7,
-              metadata: {
-                bookingId: booking.id,
-                bookingNumber: booking.bookingNumber,
-                test: "true",
-              },
-            });
-
-            // Send invoice email to admin via outreach (do not update booking)
-            await outreach.trigger("invoice_email", {
-              ...booking,
-              invoiceNumber: invoice.number,
-              amountDuePence: invoice.amount_due,
-              hostedInvoiceUrl: invoice.hosted_invoice_url,
-              customerEmail: adminEmail,
-              productName,
-              lineItems,
-            });
-
-            console.log(`[Bookings] Test invoice ${invoice.number} sent to ${adminEmail} - ${invoice.hosted_invoice_url}`);
-            return {
-              stripeInvoiceId: invoice.id,
-              invoiceNumber: invoice.number,
-              hostedInvoiceUrl: invoice.hosted_invoice_url,
-            };
+            // TODO: Test invoice creation via centralised payments service
+            console.error("[Bookings] Test invoice creation not yet available via centralised service");
+            throw new Error("Test invoice creation not yet available via centralised payments service");
           }
 
-          // Live mode: create real Stripe invoice and email the customer
-          if (!stripe) {
-            throw new Error("Stripe is not configured");
-          }
-
+          // Live mode: create invoice via centralised payments service
+          // TODO: Wire invoice creation through centralised payments service
           if (!booking.customerEmail) {
             throw new Error("No customer email on booking");
           }
 
           const totalPence = lineItems.reduce((s, i) => s + (i.unitPricePence * i.quantity), 0);
-          console.log(`[Bookings] Creating Stripe invoice for ${booking.customerEmail} - ${formatPence(totalPence)}`);
+          console.log(`[Bookings] Creating invoice for ${booking.customerEmail} - ${formatPence(totalPence)}`);
 
-          const invoice = await createFullInvoice(stripe, {
+          // TODO: Replace with centralised payments service invoice endpoint
+          const invoice = await createFullInvoice(null, {
             customerEmail: booking.customerEmail,
             customerName: booking.customerName,
             customerPhone: booking.customerPhone,
