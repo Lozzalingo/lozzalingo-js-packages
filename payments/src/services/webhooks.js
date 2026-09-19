@@ -1,6 +1,5 @@
 /**
  * Webhook service - verifies payment callbacks from the centralised Payments service.
- * Replaces direct Stripe webhook signature verification.
  *
  * The centralised payments service sends callbacks with HMAC signatures
  * using the shared API key. The PaymentsClient.verifyCallback() method

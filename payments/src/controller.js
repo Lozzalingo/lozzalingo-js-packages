@@ -2,7 +2,7 @@
  * Payment controller factory.
  *
  * Creates Express request handlers for payment operations via the
- * centralised Payments service. Replaces direct Stripe SDK usage.
+ * centralised Payments service.
  *
  * Sites pass database operations via webhookHandlers so each site
  * decides what happens on payment events.
@@ -145,8 +145,12 @@ function createPaymentController(options = {}) {
    * POST /webhook - Payment callback handler.
    * Receives callbacks from the centralised payments service.
    */
-  const handleWebhook = createPaymentCallbackHandler(
-    async ({ sessionId, lineItems, metadata, customerEmail }) => {
+  const handleWebhook = createPaymentCallbackHandler({
+    onSuccess: async (data) => {
+      const sessionId = data.session_id || data.sessionId;
+      const metadata = data.metadata || {};
+      const customerEmail = data.customer_email || "";
+      const lineItems = data.line_items || [];
       console.log(`[Payments] Payment succeeded for session: ${sessionId}`);
       const handler = webhookHandlers["checkout.session.completed"];
       if (handler) {
@@ -159,15 +163,18 @@ function createPaymentController(options = {}) {
         }, { type: "checkout.session.completed" });
       }
     },
-    async ({ sessionId, eventType, metadata }) => {
+    onFailure: async (data) => {
+      const sessionId = data.session_id || data.sessionId;
+      const eventType = data.event_type || "";
+      const metadata = data.metadata || {};
       console.log(`[Payments] Payment event ${eventType} for session: ${sessionId}`);
       const handler = webhookHandlers[eventType];
       if (handler) {
         await handler({ id: sessionId, metadata }, { type: eventType });
       }
     },
-    { client: payments }
-  );
+    client: payments,
+  });
 
   /**
    * POST /admin/invoice - Create and send an invoice.

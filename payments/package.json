@@ -11,9 +11,7 @@
     "./services/webhooks": "./src/services/webhooks.js",
     "./server/payments-client": "./server/payments-client.js"
   },
-  "dependencies": {
-    "stripe": "^20.1.0"
-  },
+  "dependencies": {},
   "peerDependencies": {
     "express": "^5.1.0"
   }

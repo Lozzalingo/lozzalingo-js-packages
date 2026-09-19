@@ -160,8 +160,16 @@ class PaymentsClient {
     metadata,
     currency = "gbp",
   }) {
+    // Convert camelCase JS keys to snake_case for the payments service
     const payload = {
-      line_items: lineItems,
+      line_items: lineItems.map((item) => ({
+        name: item.name,
+        price_pence: item.pricePence || item.price_pence || item.amount,
+        quantity: item.quantity || 1,
+        description: item.description,
+        images: item.images,
+        currency: item.currency,
+      })),
       success_url: successUrl,
       cancel_url: cancelUrl,
       currency,

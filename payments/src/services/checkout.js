@@ -1,6 +1,5 @@
 /**
  * Checkout service - creates checkout sessions via the centralised Payments service.
- * Replaces direct Stripe SDK calls.
  */
 
 const { PaymentsClient } = require("@lozzalingo/payments/server/payments-client");

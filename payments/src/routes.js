@@ -2,7 +2,6 @@
  * Payment routes factory.
  *
  * Creates an Express router with all payment endpoints.
- * This package does NOT take prisma as first arg - it is Stripe-focused.
  * Sites pass database operations via webhookHandlers.
  */
 
@@ -12,8 +11,6 @@ const { createPaymentController } = require("./controller");
 /**
  * Create payment routes.
  * @param {object} options
- * @param {string} options.stripeSecretKey
- * @param {string} options.webhookSecret
  * @param {string} options.currency - Default currency (default: "gbp")
  * @param {string} options.successUrl - Default success redirect
  * @param {string} options.cancelUrl - Default cancel redirect
@@ -38,7 +35,7 @@ function createPaymentRoutes(options = {}) {
   router.get("/checkout/session", controller.getSession);
   router.get("/checkout/status", controller.getStatus);
 
-  // Webhook route - no auth, verified by Stripe signature
+  // Webhook route - no auth, verified by payments service signature
   router.post("/webhook", controller.handleWebhook);
 
   // Admin routes

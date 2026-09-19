@@ -2,7 +2,7 @@
  * @lozzalingo/payments
  *
  * Payment integration via the centralised Payments service.
- * Replaces direct Stripe SDK usage with thin client calls.
+ * Payment integration via HTTP calls to the centralised service.
  */
 
 const { createPaymentRoutes } = require("./routes");
