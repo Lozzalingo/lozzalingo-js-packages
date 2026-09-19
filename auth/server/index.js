@@ -1,4 +1,6 @@
 const { createAuthController } = require('./auth.controller');
 const { createAuthRoutes } = require('./auth.routes');
 const { createAuthMiddleware } = require('./middleware');
-module.exports = { createAuthController, createAuthRoutes, createAuthMiddleware };
+const { requireAdminSSO } = require('./admin-sso');
+const { decodeJWT, verifyHS256 } = require('./jwt-verify');
+module.exports = { createAuthController, createAuthRoutes, createAuthMiddleware, requireAdminSSO, decodeJWT, verifyHS256 };
