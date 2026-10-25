@@ -5,5 +5,4 @@
  * Mirrors the Python framework's auth module.
  */
 
-export { createAuthOptions, createAuthHandler } from "./authOptions";
 export { createRegisterHandler } from "./register";
