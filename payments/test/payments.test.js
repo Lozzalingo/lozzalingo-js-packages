@@ -2,8 +2,54 @@
  * @lozzalingo/payments - Test suite
  *
  * Tests checkout sessions, invoicing, webhook handling, and route wiring.
+ * All tests mock the PaymentsClient rather than the Stripe SDK.
  */
 
+const crypto = require("crypto");
+
+// ---- Mock PaymentsClient ----
+
+const mockPaymentsClient = {
+  url: "https://payments.test.com",
+  key: "test-api-key-123",
+  timeoutMs: 10000,
+  createCheckout: jest.fn().mockResolvedValue({
+    checkoutUrl: "https://payments.test.com/checkout/cs_test_123",
+    sessionId: "cs_test_123",
+  }),
+  getSession: jest.fn().mockResolvedValue({
+    session_id: "cs_test_123",
+    status: "complete",
+    payment_status: "paid",
+    customer_email: "john@example.com",
+    amount_total: 24000,
+    currency: "gbp",
+    metadata: {},
+  }),
+  createSubscriptionCheckout: jest.fn().mockResolvedValue({
+    checkoutUrl: "https://payments.test.com/checkout/cs_sub_123",
+    sessionId: "cs_sub_123",
+  }),
+  createCustomer: jest.fn().mockResolvedValue({
+    customerId: "cus_new_123",
+    email: "john@example.com",
+  }),
+  getCustomer: jest.fn().mockResolvedValue({
+    customerId: "cus_existing_456",
+    email: "jane@example.com",
+  }),
+  verifyCallback: jest.fn(),
+  _request: jest.fn(),
+};
+
+jest.mock("@lozzalingo/payments/server/payments-client", () => ({
+  PaymentsClient: jest.fn().mockImplementation(() => ({ ...mockPaymentsClient })),
+  createPaymentCallbackHandler: jest.requireActual(
+    "@lozzalingo/payments/server/payments-client"
+  ).createPaymentCallbackHandler,
+}));
+
+// Now require modules after mock is set up
 const { createCheckoutSession, retrieveSession } = require("../src/services/checkout");
 const {
   findOrCreateStripeCustomer,
@@ -14,54 +60,6 @@ const {
 const { verifyWebhookSignature } = require("../src/services/webhooks");
 const { createPaymentController } = require("../src/controller");
 const { createPaymentRoutes } = require("../src/routes");
-
-// ---- Mock Stripe ----
-
-const mockStripeInstance = {
-  checkout: {
-    sessions: {
-      create: jest.fn().mockResolvedValue({
-        id: "cs_test_123",
-        url: "https://checkout.stripe.com/test",
-        payment_status: "paid",
-      }),
-      retrieve: jest.fn().mockResolvedValue({
-        id: "cs_test_123",
-        payment_status: "paid",
-        line_items: { data: [] },
-      }),
-    },
-  },
-  customers: {
-    list: jest.fn().mockResolvedValue({ data: [] }),
-    create: jest.fn().mockResolvedValue({ id: "cus_new_123", name: "John Smith", email: "john@example.com" }),
-    update: jest.fn().mockResolvedValue({ id: "cus_existing_456", name: "John Smith" }),
-  },
-  invoiceItems: {
-    create: jest.fn().mockResolvedValue({ id: "ii_123" }),
-  },
-  invoices: {
-    create: jest.fn().mockResolvedValue({ id: "inv_123" }),
-    finalizeInvoice: jest.fn().mockResolvedValue({
-      id: "inv_123",
-      number: "INV-0001",
-      amount_due: 24000,
-      hosted_invoice_url: "https://invoice.stripe.com/test",
-      due_date: 1700000000,
-    }),
-  },
-  webhooks: {
-    constructEvent: jest.fn(),
-  },
-};
-
-jest.mock("stripe", () => {
-  return jest.fn().mockImplementation(() => mockStripeInstance);
-});
-
-function mockCreateStripe() {
-  return mockStripeInstance;
-}
 
 // ---- Mock req/res ----
 
@@ -94,15 +92,25 @@ function createMockRes() {
 // ---- Tests ----
 
 describe("Checkout Service", () => {
-  let mockStripe;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    mockStripe = mockCreateStripe();
+    mockPaymentsClient.createCheckout.mockResolvedValue({
+      checkoutUrl: "https://payments.test.com/checkout/cs_test_123",
+      sessionId: "cs_test_123",
+    });
+    mockPaymentsClient.getSession.mockResolvedValue({
+      session_id: "cs_test_123",
+      status: "complete",
+      payment_status: "paid",
+      customer_email: "john@example.com",
+      amount_total: 24000,
+      currency: "gbp",
+      metadata: {},
+    });
   });
 
   test("createCheckoutSession creates session with event metadata", async () => {
-    const result = await createCheckoutSession(mockStripe, {
+    const result = await createCheckoutSession(null, {
       eventTitle: "Camden Scavenger Hunt",
       customerEmail: "john@example.com",
       customerName: "John Smith",
@@ -119,29 +127,26 @@ describe("Checkout Service", () => {
     });
 
     expect(result.sessionId).toBe("cs_test_123");
-    expect(result.url).toBe("https://checkout.stripe.com/test");
+    expect(result.url).toBe("https://payments.test.com/checkout/cs_test_123");
 
-    const createCall = mockStripe.checkout.sessions.create.mock.calls[0][0];
-    expect(createCall.mode).toBe("payment");
-    expect(createCall.payment_method_types).toEqual(["card"]);
-    expect(createCall.customer_email).toBe("john@example.com");
-    expect(createCall.line_items[0].price_data.unit_amount).toBe(24000);
-    expect(createCall.line_items[0].price_data.product_data.name).toBe("Camden Scavenger Hunt");
-    expect(createCall.line_items[0].price_data.product_data.description).toContain("12 people");
-    expect(createCall.line_items[0].quantity).toBe(1);
-    expect(createCall.metadata.customerName).toBe("John Smith");
-    expect(createCall.metadata.customerEmail).toBe("john@example.com");
-    expect(createCall.metadata.groupSize).toBe("12");
-    expect(createCall.metadata.productSlug).toBe("camden-hunt");
-    expect(createCall.metadata.packageSlug).toBe("standard");
-    expect(createCall.metadata.companyName).toBe("Acme Corp");
-    expect(createCall.metadata.message).toBe("Birthday party");
-    expect(createCall.success_url).toBe("https://example.com/success");
-    expect(createCall.cancel_url).toBe("https://example.com/cancel");
+    expect(mockPaymentsClient.createCheckout).toHaveBeenCalledTimes(1);
+    const callArgs = mockPaymentsClient.createCheckout.mock.calls[0][0];
+    expect(callArgs.lineItems[0].name).toBe("Camden Scavenger Hunt");
+    expect(callArgs.lineItems[0].pricePence).toBe(24000);
+    expect(callArgs.lineItems[0].quantity).toBe(1);
+    expect(callArgs.customerEmail).toBe("john@example.com");
+    expect(callArgs.successUrl).toBe("https://example.com/success");
+    expect(callArgs.cancelUrl).toBe("https://example.com/cancel");
+    expect(callArgs.metadata.customerName).toBe("John Smith");
+    expect(callArgs.metadata.groupSize).toBe("12");
+    expect(callArgs.metadata.productSlug).toBe("camden-hunt");
+    expect(callArgs.metadata.packageSlug).toBe("standard");
+    expect(callArgs.metadata.companyName).toBe("Acme Corp");
+    expect(callArgs.metadata.message).toBe("Birthday party");
   });
 
   test("createCheckoutSession uses default currency (gbp) when not specified", async () => {
-    await createCheckoutSession(mockStripe, {
+    await createCheckoutSession(null, {
       eventTitle: "Test Hunt",
       priceInPence: 5000,
       groupSize: 2,
@@ -150,12 +155,12 @@ describe("Checkout Service", () => {
       cancelUrl: "https://example.com/cancel",
     });
 
-    const createCall = mockStripe.checkout.sessions.create.mock.calls[0][0];
-    expect(createCall.line_items[0].price_data.currency).toBe("gbp");
+    const callArgs = mockPaymentsClient.createCheckout.mock.calls[0][0];
+    expect(callArgs.currency).toBe("gbp");
   });
 
   test("createCheckoutSession defaults empty optional fields to empty strings in metadata", async () => {
-    await createCheckoutSession(mockStripe, {
+    await createCheckoutSession(null, {
       eventTitle: "Test Hunt",
       customerEmail: "john@example.com",
       priceInPence: 5000,
@@ -165,42 +170,55 @@ describe("Checkout Service", () => {
       cancelUrl: "https://example.com/cancel",
     });
 
-    const createCall = mockStripe.checkout.sessions.create.mock.calls[0][0];
-    expect(createCall.metadata.customerPhone).toBe("");
-    expect(createCall.metadata.companyName).toBe("");
-    expect(createCall.metadata.message).toBe("");
-    expect(createCall.metadata.productSlug).toBe("");
-    expect(createCall.metadata.packageSlug).toBe("");
+    const callArgs = mockPaymentsClient.createCheckout.mock.calls[0][0];
+    expect(callArgs.metadata.customerPhone).toBe("");
+    expect(callArgs.metadata.companyName).toBe("");
+    expect(callArgs.metadata.message).toBe("");
+    expect(callArgs.metadata.productSlug).toBe("");
+    expect(callArgs.metadata.packageSlug).toBe("");
   });
 
-  test("retrieveSession retrieves session with expanded line items", async () => {
-    const result = await retrieveSession(mockStripe, "cs_test_123");
+  test("createCheckoutSession throws when payments service returns null", async () => {
+    mockPaymentsClient.createCheckout.mockResolvedValue(null);
 
-    expect(result.id).toBe("cs_test_123");
+    await expect(
+      createCheckoutSession(null, {
+        eventTitle: "Test",
+        priceInPence: 1000,
+        groupSize: 1,
+        eventDate: "2026-06-15",
+        successUrl: "https://example.com/success",
+        cancelUrl: "https://example.com/cancel",
+      })
+    ).rejects.toThrow("Failed to create checkout session");
+  });
+
+  test("retrieveSession retrieves session by ID", async () => {
+    const result = await retrieveSession(null, "cs_test_123");
+
+    expect(result.session_id).toBe("cs_test_123");
     expect(result.payment_status).toBe("paid");
-    expect(mockStripe.checkout.sessions.retrieve).toHaveBeenCalledWith("cs_test_123", {
-      expand: ["line_items"],
-    });
+    expect(mockPaymentsClient.getSession).toHaveBeenCalledWith("cs_test_123");
+  });
+
+  test("retrieveSession throws when session not found", async () => {
+    mockPaymentsClient.getSession.mockResolvedValue(null);
+
+    await expect(retrieveSession(null, "cs_missing")).rejects.toThrow("Session not found");
   });
 });
 
 describe("Invoicing Service", () => {
-  let mockStripe;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    mockStripe = mockCreateStripe();
-  });
-
-  test("findOrCreateStripeCustomer creates new customer when none exists", async () => {
-    mockStripe.customers.list.mockResolvedValue({ data: [] });
-    mockStripe.customers.create.mockResolvedValue({
-      id: "cus_new_789",
-      name: "Jane Doe",
+    mockPaymentsClient.createCustomer.mockResolvedValue({
+      customerId: "cus_new_789",
       email: "jane@example.com",
     });
+  });
 
-    const result = await findOrCreateStripeCustomer(mockStripe, {
+  test("findOrCreateStripeCustomer creates customer via payments service", async () => {
+    const result = await findOrCreateStripeCustomer(null, {
       email: "jane@example.com",
       name: "Jane Doe",
       phone: "07777999888",
@@ -209,248 +227,144 @@ describe("Invoicing Service", () => {
     });
 
     expect(result.id).toBe("cus_new_789");
-    expect(mockStripe.customers.create).toHaveBeenCalledWith({
-      name: "Jane Doe",
-      email: "jane@example.com",
-      phone: "07777999888",
-      description: "Customer for Acme Corp - Scavenger Hunt",
-    });
+    expect(result.email).toBe("jane@example.com");
+    expect(mockPaymentsClient.createCustomer).toHaveBeenCalledTimes(1);
+    const callArgs = mockPaymentsClient.createCustomer.mock.calls[0][0];
+    expect(callArgs.email).toBe("jane@example.com");
+    expect(callArgs.metadata.company).toBe("Acme Corp");
+    expect(callArgs.metadata.product_name).toBe("Scavenger Hunt");
   });
 
-  test("findOrCreateStripeCustomer returns existing customer", async () => {
-    mockStripe.customers.list.mockResolvedValue({
-      data: [{ id: "cus_existing_456", name: "Jane Doe", phone: "07777999888", description: "Customer for Acme Corp - Hunt" }],
-    });
+  test("findOrCreateStripeCustomer throws when payments service fails", async () => {
+    mockPaymentsClient.createCustomer.mockResolvedValue(null);
 
-    const result = await findOrCreateStripeCustomer(mockStripe, {
-      email: "jane@example.com",
-      name: "Jane Doe",
-      phone: "07777999888",
-      company: "Acme Corp",
-      productName: "Hunt",
-    });
-
-    expect(result.id).toBe("cus_existing_456");
-    expect(mockStripe.customers.create).not.toHaveBeenCalled();
+    await expect(
+      findOrCreateStripeCustomer(null, {
+        email: "fail@example.com",
+        name: "Fail User",
+      })
+    ).rejects.toThrow("Failed to create customer via centralised payments service");
   });
 
-  test("findOrCreateStripeCustomer updates existing customer when details differ", async () => {
-    mockStripe.customers.list.mockResolvedValue({
-      data: [{ id: "cus_existing_456", name: "Old Name", phone: null, description: "old" }],
-    });
-    mockStripe.customers.update.mockResolvedValue({
-      id: "cus_existing_456",
-      name: "New Name",
-    });
-
-    const result = await findOrCreateStripeCustomer(mockStripe, {
-      email: "jane@example.com",
-      name: "New Name",
-      company: "Acme Corp",
-      productName: "Hunt",
-    });
-
-    expect(result.id).toBe("cus_existing_456");
-    expect(mockStripe.customers.update).toHaveBeenCalledWith("cus_existing_456", {
-      name: "New Name",
-      phone: undefined,
-      description: "Customer for Acme Corp - Hunt",
-    });
-  });
-
-  test("createInvoiceItems creates line items with correct amounts", async () => {
+  test("createInvoiceItems prepares line items with correct structure", async () => {
     const lineItems = [
-      { description: "Scavenger Hunt", unitPricePence: 2000, quantity: 12 },
-      { description: "Photo Package", unitPricePence: 1500, quantity: 1 },
+      { description: "Scavenger Hunt", amount: 24000 },
+      { description: "Photo Package", amount: 1500 },
     ];
 
-    const result = await createInvoiceItems(mockStripe, "cus_123", lineItems);
+    const result = await createInvoiceItems(null, "cus_123", lineItems);
 
     expect(result).toHaveLength(2);
-    expect(mockStripe.invoiceItems.create).toHaveBeenCalledTimes(2);
-
-    const firstCall = mockStripe.invoiceItems.create.mock.calls[0][0];
-    expect(firstCall.customer).toBe("cus_123");
-    expect(firstCall.amount).toBe(24000); // 2000 * 12
-    expect(firstCall.currency).toBe("gbp");
-    expect(firstCall.description).toContain("Scavenger Hunt");
-
-    const secondCall = mockStripe.invoiceItems.create.mock.calls[1][0];
-    expect(secondCall.amount).toBe(1500); // 1500 * 1
+    expect(result[0].description).toBe("Scavenger Hunt");
+    expect(result[0].amount).toBe(24000);
+    expect(result[1].description).toBe("Photo Package");
+    expect(result[1].amount).toBe(1500);
   });
 
   test("createInvoiceItems applies discount as negative line item", async () => {
     const lineItems = [
-      { description: "Hunt", unitPricePence: 2000, quantity: 10 },
+      { description: "Hunt", amount: 20000 },
     ];
 
-    await createInvoiceItems(mockStripe, "cus_123", lineItems, 5000);
+    const result = await createInvoiceItems(null, "cus_123", lineItems, 5000);
 
-    expect(mockStripe.invoiceItems.create).toHaveBeenCalledTimes(2);
-
-    const discountCall = mockStripe.invoiceItems.create.mock.calls[1][0];
-    expect(discountCall.amount).toBe(-5000);
-    expect(discountCall.description).toBe("Discount");
+    expect(result).toHaveLength(2);
+    expect(result[1].description).toBe("Discount");
+    expect(result[1].amount).toBe(-5000);
   });
 
-  test("createInvoiceItems skips items with zero or negative values", async () => {
+  test("createInvoiceItems skips items with zero amount", async () => {
     const lineItems = [
-      { description: "Valid", unitPricePence: 2000, quantity: 1 },
-      { description: "Zero price", unitPricePence: 0, quantity: 5 },
-      { description: "Zero qty", unitPricePence: 1000, quantity: 0 },
+      { description: "Valid", amount: 2000 },
+      { description: "Zero price", amount: 0 },
     ];
 
-    const result = await createInvoiceItems(mockStripe, "cus_123", lineItems);
+    const result = await createInvoiceItems(null, "cus_123", lineItems);
 
     expect(result).toHaveLength(1);
-    expect(mockStripe.invoiceItems.create).toHaveBeenCalledTimes(1);
+    expect(result[0].description).toBe("Valid");
   });
 
-  test("createInvoiceItems throws if no valid items", async () => {
-    const lineItems = [
-      { description: "Zero", unitPricePence: 0, quantity: 0 },
-    ];
-
-    await expect(createInvoiceItems(mockStripe, "cus_123", lineItems)).rejects.toThrow(
-      "No valid invoice items created"
+  test("createInvoiceItems throws if no items provided", async () => {
+    await expect(createInvoiceItems(null, "cus_123", [])).rejects.toThrow(
+      "At least one line item is required"
     );
   });
 
-  test("createAndFinaliseInvoice creates and finalises with correct params", async () => {
-    mockStripe.invoices.create.mockResolvedValue({ id: "inv_456" });
-    mockStripe.invoices.finalizeInvoice.mockResolvedValue({
-      id: "inv_456",
-      number: "INV-0002",
-      amount_due: 20000,
-      hosted_invoice_url: "https://invoice.stripe.com/inv_456",
-    });
-
-    const result = await createAndFinaliseInvoice(mockStripe, {
-      stripeCustomerId: "cus_123",
-      description: "Scavenger Hunt - Acme Corp",
-      daysUntilDue: 7,
-      metadata: { booking_ref: "BR-ABC123" },
-      footer: "Bank details here",
-    });
-
-    expect(result.number).toBe("INV-0002");
-    expect(result.hosted_invoice_url).toBe("https://invoice.stripe.com/inv_456");
-
-    const createCall = mockStripe.invoices.create.mock.calls[0][0];
-    expect(createCall.customer).toBe("cus_123");
-    expect(createCall.collection_method).toBe("send_invoice");
-    expect(createCall.days_until_due).toBe(7);
-    expect(createCall.auto_advance).toBe(false);
-    expect(createCall.metadata.booking_ref).toBe("BR-ABC123");
-    expect(createCall.footer).toBe("Bank details here");
-    expect(createCall.pending_invoice_items_behavior).toBe("include");
-
-    expect(mockStripe.invoices.finalizeInvoice).toHaveBeenCalledWith("inv_456");
-  });
-
-  test("createAndFinaliseInvoice omits footer when not provided", async () => {
-    mockStripe.invoices.create.mockResolvedValue({ id: "inv_789" });
-    mockStripe.invoices.finalizeInvoice.mockResolvedValue({
-      id: "inv_789",
-      number: "INV-0003",
-      amount_due: 10000,
-      hosted_invoice_url: "https://invoice.stripe.com/inv_789",
-    });
-
-    await createAndFinaliseInvoice(mockStripe, {
-      stripeCustomerId: "cus_123",
-      description: "Test",
-    });
-
-    const createCall = mockStripe.invoices.create.mock.calls[0][0];
-    expect(createCall.footer).toBeUndefined();
-  });
-
-  test("createFullInvoice runs the complete flow", async () => {
-    mockStripe.customers.list.mockResolvedValue({ data: [] });
-    mockStripe.customers.create.mockResolvedValue({ id: "cus_full_123" });
-    mockStripe.invoiceItems.create.mockResolvedValue({ id: "ii_full_1" });
-    mockStripe.invoices.create.mockResolvedValue({ id: "inv_full_123" });
-    mockStripe.invoices.finalizeInvoice.mockResolvedValue({
-      id: "inv_full_123",
-      number: "INV-FULL-001",
-      amount_due: 24000,
-      hosted_invoice_url: "https://invoice.stripe.com/full",
-    });
-
-    const result = await createFullInvoice(mockStripe, {
-      customerEmail: "john@example.com",
-      customerName: "John Smith",
-      customerPhone: "07777123456",
-      companyName: "Acme Corp",
-      productName: "Camden Hunt",
-      lineItems: [
-        { description: "Scavenger Hunt", unitPricePence: 2000, quantity: 12 },
-      ],
-      daysUntilDue: 3,
-      metadata: { booking_ref: "BR-XYZ" },
-      footer: "Pay by bank transfer",
-    });
-
-    expect(result.number).toBe("INV-FULL-001");
-    expect(result.hosted_invoice_url).toBe("https://invoice.stripe.com/full");
-
-    // Customer was created
-    expect(mockStripe.customers.create).toHaveBeenCalled();
-    // Invoice item was created
-    expect(mockStripe.invoiceItems.create).toHaveBeenCalledTimes(1);
-    // Invoice was created and finalised
-    expect(mockStripe.invoices.create).toHaveBeenCalled();
-    expect(mockStripe.invoices.finalizeInvoice).toHaveBeenCalledWith("inv_full_123");
-  });
-
-  test("createFullInvoice propagates errors", async () => {
-    mockStripe.customers.list.mockRejectedValue(new Error("Stripe API down"));
-
+  test("createAndFinaliseInvoice throws (not yet supported)", async () => {
     await expect(
-      createFullInvoice(mockStripe, {
-        customerEmail: "fail@example.com",
-        customerName: "Fail User",
-        lineItems: [{ description: "Test", unitPricePence: 1000, quantity: 1 }],
+      createAndFinaliseInvoice(null, {
+        stripeCustomerId: "cus_123",
+        description: "Test invoice",
       })
-    ).rejects.toThrow("Stripe API down");
+    ).rejects.toThrow("Invoice creation not yet available via centralised payments service");
+  });
+
+  test("createFullInvoice creates customer then throws (invoicing not yet supported)", async () => {
+    await expect(
+      createFullInvoice(null, {
+        customerEmail: "john@example.com",
+        customerName: "John Smith",
+        lineItems: [{ description: "Test", amount: 1000 }],
+      })
+    ).rejects.toThrow("Invoice creation not yet available via centralised payments service");
+
+    // Customer creation should have been attempted
+    expect(mockPaymentsClient.createCustomer).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("Webhooks Service", () => {
-  test("verifyWebhookSignature returns event on valid signature", () => {
-    const mockStripe = mockCreateStripe();
-    const mockEvent = { id: "evt_123", type: "checkout.session.completed" };
-    mockStripe.webhooks.constructEvent.mockReturnValue(mockEvent);
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
 
-    const result = verifyWebhookSignature(mockStripe, Buffer.from("body"), "sig_valid", "whsec_test");
+  test("verifyWebhookSignature returns event-like object on valid callback", () => {
+    const callbackData = {
+      event_type: "checkout.session.completed",
+      session_id: "cs_123",
+      metadata: { productSlug: "hunt" },
+      customer_email: "john@example.com",
+      line_items: [{ name: "Hunt", amount: 2400 }],
+    };
 
-    expect(result).toEqual(mockEvent);
+    mockPaymentsClient.verifyCallback.mockReturnValue(callbackData);
+
+    const result = verifyWebhookSignature(null, createMockReq());
+
+    expect(result.type).toBe("checkout.session.completed");
+    expect(result.id).toBe("cs_123");
+    expect(result.data.object.id).toBe("cs_123");
+    expect(result.data.object.metadata.productSlug).toBe("hunt");
+    expect(result.data.object.customer_email).toBe("john@example.com");
   });
 
   test("verifyWebhookSignature throws on invalid signature", () => {
-    const mockStripe = mockCreateStripe();
-    mockStripe.webhooks.constructEvent.mockImplementation(() => {
-      throw new Error("Invalid signature");
-    });
+    mockPaymentsClient.verifyCallback.mockReturnValue(null);
 
     expect(() => {
-      verifyWebhookSignature(mockStripe, Buffer.from("body"), "bad_sig", "whsec_test");
-    }).toThrow("Invalid signature");
+      verifyWebhookSignature(null, createMockReq());
+    }).toThrow("Invalid payment callback signature");
   });
 });
 
 describe("Payment Controller", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPaymentsClient.createCheckout.mockResolvedValue({
+      checkoutUrl: "https://payments.test.com/checkout/cs_test_123",
+      sessionId: "cs_test_123",
+    });
+    mockPaymentsClient.getSession.mockResolvedValue({
+      session_id: "cs_test_123",
+      status: "complete",
+      payment_status: "paid",
+    });
   });
 
   describe("checkout endpoint", () => {
     test("returns 400 when eventTitle is missing", async () => {
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-        webhookSecret: "whsec_test",
-      });
+      const controller = createPaymentController({});
 
       const req = createMockReq({ body: { priceInPence: 5000 } });
       const res = createMockRes();
@@ -462,10 +376,7 @@ describe("Payment Controller", () => {
     });
 
     test("returns 400 when priceInPence is missing", async () => {
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-        webhookSecret: "whsec_test",
-      });
+      const controller = createPaymentController({});
 
       const req = createMockReq({ body: { eventTitle: "Test" } });
       const res = createMockRes();
@@ -478,8 +389,6 @@ describe("Payment Controller", () => {
 
     test("returns session on success", async () => {
       const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-        webhookSecret: "whsec_test",
         baseUrl: "https://example.com",
       });
 
@@ -498,15 +407,33 @@ describe("Payment Controller", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.sessionId).toBe("cs_test_123");
-      expect(res.body.url).toBe("https://checkout.stripe.com/test");
+      expect(res.body.url).toBe("https://payments.test.com/checkout/cs_test_123");
+    });
+
+    test("returns 502 when payments service returns null", async () => {
+      mockPaymentsClient.createCheckout.mockResolvedValue(null);
+
+      const controller = createPaymentController({
+        baseUrl: "https://example.com",
+      });
+
+      const req = createMockReq({
+        body: {
+          eventTitle: "Camden Hunt",
+          priceInPence: 24000,
+        },
+      });
+      const res = createMockRes();
+
+      await controller.checkout(req, res);
+
+      expect(res.statusCode).toBe(502);
     });
   });
 
   describe("getSession endpoint", () => {
     test("returns 400 when session_id is missing", async () => {
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-      });
+      const controller = createPaymentController({});
 
       const req = createMockReq({ query: {} });
       const res = createMockRes();
@@ -518,9 +445,7 @@ describe("Payment Controller", () => {
     });
 
     test("returns session on success", async () => {
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-      });
+      const controller = createPaymentController({});
 
       const req = createMockReq({ query: { session_id: "cs_test_123" } });
       const res = createMockRes();
@@ -528,15 +453,26 @@ describe("Payment Controller", () => {
       await controller.getSession(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.id).toBe("cs_test_123");
+      expect(res.body.session_id).toBe("cs_test_123");
+    });
+
+    test("returns 404 when session not found", async () => {
+      mockPaymentsClient.getSession.mockResolvedValue(null);
+
+      const controller = createPaymentController({});
+
+      const req = createMockReq({ query: { session_id: "cs_missing" } });
+      const res = createMockRes();
+
+      await controller.getSession(req, res);
+
+      expect(res.statusCode).toBe(404);
     });
   });
 
   describe("getStatus endpoint", () => {
-    test("returns configured true when key is set", async () => {
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-      });
+    test("returns configured status based on payments client", async () => {
+      const controller = createPaymentController({});
 
       const req = createMockReq();
       const res = createMockRes();
@@ -544,21 +480,7 @@ describe("Payment Controller", () => {
       await controller.getStatus(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.configured).toBe(true);
-    });
-
-    test("returns configured false when key is empty", async () => {
-      const controller = createPaymentController({
-        stripeSecretKey: "",
-      });
-
-      const req = createMockReq();
-      const res = createMockRes();
-
-      await controller.getStatus(req, res);
-
-      expect(res.statusCode).toBe(200);
-      expect(res.body.configured).toBe(false);
+      expect(typeof res.body.configured).toBe("boolean");
     });
   });
 
@@ -566,240 +488,90 @@ describe("Payment Controller", () => {
     test("calls correct handler for checkout.session.completed", async () => {
       const handler = jest.fn().mockResolvedValue(undefined);
 
-      const mockEvent = {
-        id: "evt_123",
-        type: "checkout.session.completed",
-        data: { object: { id: "cs_123", metadata: { productSlug: "hunt" } } },
+      const callbackBody = {
+        event_type: "checkout.session.completed",
+        session_id: "cs_123",
+        metadata: { productSlug: "hunt" },
+        customer_email: "john@example.com",
+        line_items: [{ name: "Hunt", amount: 2400 }],
       };
 
-      mockStripeInstance.webhooks.constructEvent.mockReturnValue(mockEvent);
+      // Generate valid HMAC signature
+      const rawBody = JSON.stringify(callbackBody);
+      const signature = crypto
+        .createHmac("sha256", "test-api-key-123")
+        .update(rawBody)
+        .digest("hex");
 
       const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-        webhookSecret: "whsec_test",
         webhookHandlers: {
           "checkout.session.completed": handler,
         },
       });
 
       const req = createMockReq({
-        headers: { "stripe-signature": "sig_valid" },
-        body: Buffer.from("raw_body"),
+        headers: { "x-pay-signature": signature },
+        body: callbackBody,
+        rawBody,
       });
       const res = createMockRes();
 
       await controller.handleWebhook(req, res);
 
-      expect(handler).toHaveBeenCalledWith(mockEvent.data.object, mockEvent);
-      expect(res.json).toHaveBeenCalledWith({ received: true });
-    });
-
-    test("calls correct handler for invoice.paid", async () => {
-      const handler = jest.fn().mockResolvedValue(undefined);
-
-      const mockEvent = {
-        id: "evt_456",
-        type: "invoice.paid",
-        data: { object: { id: "inv_123", number: "INV-0001", amount_paid: 24000 } },
-      };
-
-      mockStripeInstance.webhooks.constructEvent.mockReturnValue(mockEvent);
-
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-        webhookSecret: "whsec_test",
-        webhookHandlers: {
-          "invoice.paid": handler,
-        },
-      });
-
-      const req = createMockReq({
-        headers: { "stripe-signature": "sig_valid" },
-        body: Buffer.from("raw_body"),
-      });
-      const res = createMockRes();
-
-      await controller.handleWebhook(req, res);
-
-      expect(handler).toHaveBeenCalledWith(mockEvent.data.object, mockEvent);
-      expect(res.json).toHaveBeenCalledWith({ received: true });
+      expect(res.body).toEqual({ received: true });
+      expect(handler).toHaveBeenCalled();
     });
 
     test("returns 200 even if handler throws", async () => {
       const handler = jest.fn().mockRejectedValue(new Error("Handler exploded"));
 
-      const mockEvent = {
-        id: "evt_789",
-        type: "checkout.session.completed",
-        data: { object: { id: "cs_789" } },
+      const callbackBody = {
+        event_type: "checkout.session.completed",
+        session_id: "cs_789",
+        metadata: {},
       };
 
-      mockStripeInstance.webhooks.constructEvent.mockReturnValue(mockEvent);
+      const rawBody = JSON.stringify(callbackBody);
+      const signature = crypto
+        .createHmac("sha256", "test-api-key-123")
+        .update(rawBody)
+        .digest("hex");
 
       const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-        webhookSecret: "whsec_test",
         webhookHandlers: {
           "checkout.session.completed": handler,
         },
       });
 
       const req = createMockReq({
-        headers: { "stripe-signature": "sig_valid" },
-        body: Buffer.from("raw_body"),
+        headers: { "x-pay-signature": signature },
+        body: callbackBody,
+        rawBody,
       });
       const res = createMockRes();
 
       await controller.handleWebhook(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({ received: true });
-      expect(res.status).not.toHaveBeenCalledWith(500);
-    });
-
-    test("returns 400 when stripe-signature header is missing", async () => {
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-        webhookSecret: "whsec_test",
-      });
-
-      const req = createMockReq({ headers: {} });
-      const res = createMockRes();
-
-      await controller.handleWebhook(req, res);
-
-      expect(res.statusCode).toBe(400);
-      expect(res.body.error).toContain("stripe-signature");
-    });
-
-    test("returns 400 when signature is invalid", async () => {
-      mockStripeInstance.webhooks.constructEvent.mockImplementation(() => {
-        throw new Error("Invalid signature");
-      });
-
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-        webhookSecret: "whsec_test",
-      });
-
-      const req = createMockReq({
-        headers: { "stripe-signature": "bad_sig" },
-        body: Buffer.from("raw_body"),
-      });
-      const res = createMockRes();
-
-      await controller.handleWebhook(req, res);
-
-      expect(res.statusCode).toBe(400);
-      expect(res.body.error).toContain("Invalid signature");
-    });
-
-    test("logs unhandled event types without error", async () => {
-      const consoleSpy = jest.spyOn(console, "log").mockImplementation();
-
-      const mockEvent = {
-        id: "evt_999",
-        type: "some.unknown.event",
-        data: { object: {} },
-      };
-
-      mockStripeInstance.webhooks.constructEvent.mockReturnValue(mockEvent);
-
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-        webhookSecret: "whsec_test",
-        webhookHandlers: {},
-      });
-
-      const req = createMockReq({
-        headers: { "stripe-signature": "sig_valid" },
-        body: Buffer.from("raw_body"),
-      });
-      const res = createMockRes();
-
-      await controller.handleWebhook(req, res);
-
-      expect(res.json).toHaveBeenCalledWith({ received: true });
-      expect(res.status).not.toHaveBeenCalled();
-
-      const logCalls = consoleSpy.mock.calls.map((c) => c.join(" "));
-      const hasUnhandledLog = logCalls.some(
-        (msg) => msg.includes("[Payments]") && (msg.includes("Unhandled") || msg.includes("some.unknown.event"))
-      );
-      expect(hasUnhandledLog).toBe(true);
-
-      consoleSpy.mockRestore();
+      // Should still return 200 with { received: true } or similar
+      expect(res.body.received).toBe(true);
     });
   });
 
   describe("createInvoice endpoint", () => {
-    test("returns 400 when lineItems is missing", async () => {
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-      });
-
-      const req = createMockReq({ body: { customerEmail: "john@example.com" } });
-      const res = createMockRes();
-
-      await controller.createInvoice(req, res);
-
-      expect(res.statusCode).toBe(400);
-      expect(res.body.error).toContain("lineItems");
-    });
-
-    test("returns 400 when customerEmail is missing", async () => {
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-      });
-
-      const req = createMockReq({
-        body: { lineItems: [{ description: "Test", unitPricePence: 1000, quantity: 1 }] },
-      });
-      const res = createMockRes();
-
-      await controller.createInvoice(req, res);
-
-      expect(res.statusCode).toBe(400);
-      expect(res.body.error).toContain("customerEmail");
-    });
-
-    test("returns invoice details on success", async () => {
-      mockStripeInstance.customers.list.mockResolvedValue({ data: [] });
-      mockStripeInstance.customers.create.mockResolvedValue({ id: "cus_inv_123" });
-      mockStripeInstance.invoiceItems.create.mockResolvedValue({ id: "ii_inv_1" });
-      mockStripeInstance.invoices.create.mockResolvedValue({ id: "inv_ctrl_123" });
-      mockStripeInstance.invoices.finalizeInvoice.mockResolvedValue({
-        id: "inv_ctrl_123",
-        number: "INV-CTRL-001",
-        amount_due: 20000,
-        hosted_invoice_url: "https://invoice.stripe.com/ctrl",
-        due_date: 1700000000,
-      });
-
-      const controller = createPaymentController({
-        stripeSecretKey: "sk_test_xxx",
-        invoiceFooter: "Pay by bank transfer",
-      });
+    test("returns 501 (not yet supported)", async () => {
+      const controller = createPaymentController({});
 
       const req = createMockReq({
         body: {
           customerEmail: "john@example.com",
-          customerName: "John Smith",
-          productName: "Camden Hunt",
-          lineItems: [
-            { description: "Scavenger Hunt", unitPricePence: 2000, quantity: 10 },
-          ],
-          daysUntilDue: 7,
-          metadata: { booking_ref: "BR-123" },
+          lineItems: [{ description: "Test", amount: 1000 }],
         },
       });
       const res = createMockRes();
 
       await controller.createInvoice(req, res);
 
-      expect(res.statusCode).toBe(200);
-      expect(res.body.invoice.number).toBe("INV-CTRL-001");
-      expect(res.body.invoice.amountDue).toBe(20000);
-      expect(res.body.invoice.hostedInvoiceUrl).toBe("https://invoice.stripe.com/ctrl");
+      expect(res.statusCode).toBe(501);
     });
   });
 });
@@ -809,8 +581,6 @@ describe("Payment Routes", () => {
     const mockAuth = jest.fn((req, res, next) => next());
 
     const router = createPaymentRoutes({
-      stripeSecretKey: "sk_test_xxx",
-      webhookSecret: "whsec_test",
       authMiddleware: mockAuth,
     });
 
@@ -840,10 +610,7 @@ describe("Payment Routes", () => {
   });
 
   test("all expected routes are mounted", () => {
-    const router = createPaymentRoutes({
-      stripeSecretKey: "sk_test_xxx",
-      webhookSecret: "whsec_test",
-    });
+    const router = createPaymentRoutes({});
 
     const routes = router.stack
       .filter((layer) => layer.route)

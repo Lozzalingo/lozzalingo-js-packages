@@ -1,15 +1,18 @@
 "use client";
 
 import React, { useState } from "react";
-import { signIn } from "next-auth/react";
 
 /**
  * Standard Lozzalingo sign-in page.
  * Mirrors the Python framework's auth/sign-in.html template.
  *
+ * Posts credentials to the Express auth module at POST /api/auth/login,
+ * which proxies to auth.laurence.computer (see JS_ARCHITECTURE.md).
+ * No NextAuth - auth is handled exclusively by the centralised auth service.
+ *
  * Features:
- * - Email/password sign-in
- * - OAuth buttons (Google, GitHub) if enabled
+ * - Email/password sign-in via /api/auth/login
+ * - OAuth buttons (Google, GitHub) if enabled - redirect to Express OAuth routes
  * - Link to register and forgot password
  * - Branded with site name and logo
  */
@@ -46,23 +49,27 @@ export default function SignInPage({
     try {
       console.log("[Auth] Sign-in attempt for:", email);
 
-      const result = await signIn("credentials", {
-        email: email.toLowerCase().trim(),
-        password,
-        redirect: false,
-        callbackUrl,
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          email: email.toLowerCase().trim(),
+          password,
+        }),
       });
 
-      if (result?.error) {
-        if (result.error === "EMAIL_NOT_VERIFIED") {
+      if (res.ok) {
+        console.log("[Auth] Sign-in successful, redirecting");
+        window.location.href = callbackUrl;
+      } else {
+        const data = await res.json().catch(() => ({}));
+        if (data.error === "EMAIL_NOT_VERIFIED") {
           setError("Please verify your email address before signing in.");
         } else {
-          setError("Invalid email or password");
+          setError(data.error || "Invalid email or password");
         }
-        console.log("[Auth] Sign-in failed:", result.error);
-      } else if (result?.url) {
-        console.log("[Auth] Sign-in successful, redirecting");
-        window.location.href = result.url;
+        console.log("[Auth] Sign-in failed:", data.error || res.status);
       }
     } catch (err) {
       console.error("[Auth] Sign-in error:", err);
@@ -99,7 +106,7 @@ export default function SignInPage({
             <div className="space-y-3 mb-6">
               {enableGoogle && (
                 <button
-                  onClick={() => signIn("google", { callbackUrl })}
+                  onClick={() => { window.location.href = `/api/auth/oauth/google?callbackUrl=${encodeURIComponent(callbackUrl)}`; }}
                   className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-100 text-gray-800 font-medium py-3 px-4 rounded-lg transition"
                   data-action="oauth_google"
                 >
@@ -114,7 +121,7 @@ export default function SignInPage({
               )}
               {enableGithub && (
                 <button
-                  onClick={() => signIn("github", { callbackUrl })}
+                  onClick={() => { window.location.href = `/api/auth/oauth/github?callbackUrl=${encodeURIComponent(callbackUrl)}`; }}
                   className="w-full flex items-center justify-center gap-3 bg-gray-800 hover:bg-gray-700 text-white font-medium py-3 px-4 rounded-lg transition border border-gray-700"
                   data-action="oauth_github"
                 >
