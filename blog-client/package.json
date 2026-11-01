@@ -1,0 +1,14 @@
+{
+  "name": "@lozzalingo/blog-client",
+  "version": "1.0.0",
+  "description": "Shared blog service client for all Lozzalingo JS sites (server-side only)",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./cache": "./src/cache.js",
+    "./client": "./src/client.js"
+  },
+  "peerDependencies": {
+    "express": "^4.0.0 || ^5.0.0"
+  }
+}
