@@ -198,7 +198,14 @@ class Lozzalingo {
       const isLocalDev = token === "localhost" && (req.hostname === "localhost" || req.hostname === "127.0.0.1");
       if (isLocalDev) return next();
 
-      // 2. Try SSO cookie auth first (if configured)
+      // 2. Static key check takes priority - API integrations and admin frontend
+      // This runs BEFORE SSO cookie check so that a valid ADMIN_API_KEY header
+      // always works even when the browser also sends an auth_token cookie.
+      if (token && adminKeys.includes(token)) {
+        return next();
+      }
+
+      // 3. Try SSO cookie auth (if configured and no static key matched)
       if (ssoMiddleware) {
         const cookies = req.cookies || {};
         const cookieHeader = req.headers.cookie || '';
@@ -210,7 +217,7 @@ class Lozzalingo {
         }
       }
 
-      // 3. Try decoding as NextAuth JWT (primary auth method)
+      // 4. Try decoding as NextAuth JWT
       if (token && nextAuthSecret) {
         try {
           const payload = await decodeNextAuthJWT(token);
@@ -223,13 +230,8 @@ class Lozzalingo {
             return res.status(403).json({ error: "Admin role required" });
           }
         } catch (e) {
-          // Not a valid JWT, fall through to static key check
+          // Not a valid JWT, fall through to SSO redirect
         }
-      }
-
-      // 4. Fallback: static key comparison (for API integrations)
-      if (token && adminKeys.includes(token)) {
-        return next();
       }
 
       // 5. If SSO is configured but no cookie and no other auth, redirect to SSO login
@@ -261,7 +263,7 @@ class Lozzalingo {
     const healthPath = this.config.routes.health || "/api/health";
     const siteName = this.config.site.name;
 
-    this.app.get(healthPath, (req, res) => {
+    const handler = (req, res) => {
       console.log("[Health] Health check requested");
       res.json({
         status: "ok",
@@ -269,7 +271,15 @@ class Lozzalingo {
         timestamp: new Date().toISOString(),
         features: this.registeredFeatures,
       });
-    });
+    };
+
+    // Register at the configured path (default /api/health)
+    this.app.get(healthPath, handler);
+
+    // Always register at /health for Ecosystem Hub compatibility
+    if (healthPath !== "/health") {
+      this.app.get("/health", handler);
+    }
   }
 
   // ── Service Creation ───────────────────────────────────────────────────────
